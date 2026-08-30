@@ -64,4 +64,154 @@ function reportToRow(r){
     notify_injury:!!(r.notifications&&r.notifications.injury), notify_ems:!!(r.notifications&&r.notifications.ems),
     notify_police:!!(r.notifications&&r.notifications.police), who_else_notified:r.whoElseNotified||"",
     force_used:!!r.forceUsed, written_by:r.writtenBy||"", written_by_callsign:r.writtenByCallsign||"",
-    submitted_at:r.submittedAt, reviewed_at:r.reviewedAt, reviewed_by:r.reviewedBy, supervisor_notes:r˜�\\��\�ܓ��\���NB��[��[ۈ����T����^�]\���Y���Y�\N����\_���[����[�Y���\ܝY����\ܝ�Y��������������\��Y������\��Y���][ے[�������][ۗ�[�����]N���]_��]T�]N���]W��]_���ZX�Q\�Μ���ZX�W�\������]�\�����]�\����\��]]�N����\��]]�_��X�[ەZ�[����X�[ۗ�Z�[������Y�X�][ۜΞ��X�N�H\����Y�W��X�K��Y�]�H\����Y�W����Y�]�ΈH\����Y�W���K���[�S��Y�YY������[�Wۛ�Y�YY���]\Μ���]\�ܚ][��N���ܚ][�؞_���ܚ][��P�[�Yێ���ܚ][�؞W��[�Y۟���X�Z]Y]����X�Z]Y�]�]�Y]�Y]����]�Y]�Y�]��]�Y]�Y�N����]�Y]�Y؞K�\\��\�ܓ��\Μ��7WW'f�6�%���FW7��"'Ӱ�ЦgV�7F���eF�&�r�b���&WGW&���C�b�B�gG�S�b�gG�W��""�6����C�b�6�����V���&W�'E��C�b�&W�'D�G���V����7C�b��7G��""��67W'&VC�b��67W'&VB����6F���������C�b���6F������G��""��FS�b��FW��""��FU�7FFS�b��FU7FFW��""�fV��6�U�FW63�b�fV��6�TFW67��""��G&�fW#�b�G&�fW'��""��'&F�fS�b��'&F�fW��""�7F����F�V�b�7F���F�V���""����F�g���Ɩ6S��b���F�f�6F���2bgb���F�f�6F���2��Ɩ6R����F�g��&���v�C��b���F�f�6F���2bgb���F�f�6F���2�&��v�B�����F�g��F�s��b���F�f�6F���2bgb���F�f�6F���2�F�r��v���V�6U���F�f�VC�b�v��V�6T��F�f�VG��""�7FGW3�b�7FGW2��w&�GFV��'��b�w&�GFV�'���""�w&�GFV��'��6��6�v�b�w&�GFV�'�6��6�v���""�7V&֗GFVE�C�b�7V&֗GFVDB��&Wf�WvVE�C�b�&Wf�WvVDB�&Wf�WvVE�'��b�&Wf�WvVD'��7WW'f�6�%���FW3�b�7WW'f�6�$��FW7��"'Ӱ�ЦgV�7F���7F�f�G�g&��&�r�"��&WGW&��C�"�B�G�S�"�G�R�7F�#�"�7F�"�FW�C�"�FW�GӲР��������������BWfW'�F���r��F�F�R5DDR6�RF�RT�W�V7G2������������7��2gV�7F�����D��7FFR�����W7B����f"&W7V�G2�v�B&�֗6R����6"�g&�҂'W6W'5�V&Ɩ2"��6V�V7B�"�"���6"�g&�҂'V�G2"��6V�V7B�"�"���6"�g&�҂'�7G2"��6V�V7B�"�"���6"�g&�҂&6�V6����G2"��6V�V7B�"�"���6"�g&�҂&6��2"��6V�V7B�"�"���&FW"�&7&VFVE�B"Ƕ66V�F��s�f�6WҒ��6"�g&�҂&6���7W�V�V�G2"��6V�V7B�"�"���&FW"�&B"Ƕ66V�F��s�G'VWҒ��6"�g&�҂&6�E�6���V�2"��6V�V7B�"�"���6"�g&�҂&6�E��W76vW2"��6V�V7B�"�"���&FW"�&B"Ƕ66V�F��s�G'VWҒ��6"�g&�҂'G'V6�2"��6V�V7B�"�"���&FW"�'F��U���"Ƕ66V�F��s�f�6WҒ��6"�g&�҂'&W�'G2"��6V�V7B�"�"���6"�g&�҂'&���u�f���F���2"��6V�V7B�"�"���6"�g&�҂'�Ɩ6U����&�W'G�"��6V�V7B�"�"���6"�g&�҂&7F�f�G����r"��6V�V7B�"�"���&FW"�&B"Ƕ66V�F��s�f�6WҒ�Ɩ֗B�S���6"�g&�҂&6�V�FW'2"��6V�V7B�"�"��ғ��&W7V�G2�f�$V6��6�����f"W6W'2�&W7V�G5���FF�V�G2�&W7V�G5���FF��7G2�&W7V�G5�%��FF�6�V6����G2�&W7V�G5�5��FF��6��2�&W7V�G5�E��FF�7W�V�V�G2�&W7V�G5�U��FF�6���V�2�&W7V�G5�e��FF��W76vW2�&W7V�G5�u��FF��G'V6�2�&W7V�G5����FF�&W�'G2�&W7V�G5����FF�g2�&W7V�G5���FF��Ɩ6R�&W7V�G5���FF��7F�f�G��&W7V�G5�%��FF�6�V�FW'2�&W7V�G5�5��FF���f"6��4�WB�6��2���6��g&��&�r���7W�V�V�G2�f�$V6��gV�7F���2���f"2�6��4�WB�f��B�gV�7F��⇂��&WGW&���C���2�6����C�ғ���b�2�2��'&F�fU7W�V�V�G2�W6���C�2�B�'��2�'��FW�C�2�FW�Gғ��ғ��f"�7G4�WB��7G2���gV�7F������&WGW&���C��B���S����R����C�涖�G��""��&s���&w��""�FG&W73��FG&W77��""��6�V6����G3�6�V6����G2�f��FW"�gV�7F���2��&WGW&�2��7E��C����C�Ғ���gV�7F���2���&WGW&���C�2�B���S�2���R���FW'f�֖�2��FW'f��֖���7E66�2��7E�66���7E66�'��2��7E�66��'�Ӱ�җӰ�ғ��f"6�V�FW$���Ӳ6�V�FW'2�f�$V6��gV�7F���2��6�V�FW$��2�W���2�f�VS�ғ���&WGW&����WF��6�FS�%&�FvV7&W7BF�&VBGf�6�'�"�7&VFVDC��V�����W6W'3�W6W'2���gV�7F���R��&WGW&��6��6�v�R�6��6�v����S�R���R�&��S�R�&��R�F�F�S�R�F�F�W��""��7F�fS�R�7F�fR��7E6�v��R��7E�6�v������W7D6��vU��R��W7E�6��vU���ӲҒ��V�G3�V�G2���V�Dg&��&�r����7G3��7G4�WB��6��3�6��4�WB��6��6W�6�V�FW$��6������6�C��6���V�3�6���V�2���gV�7F���2��&WGW&���C�2�B���S�2���R�FW63�2�FW67&�F�����"'ӷҒ��W76vW3��W76vW2���gV�7F���җ��&WGW&��6���Væ��6���V���B�g&�Ӧ��g&���6��6�v���""���S�����W��""�&�����&����FW�C���FW�B�C���GӰ�җ���G'V6�3�G'V6�2���G'V6�g&��&�r���&W�'E6W�6�V�FW$��&W�'G����&W�'G3�&W�'G2���&W�'Dg&��&�r����Ɩ6T��&�W'G���Ɩ6R���gV�7F�����&WGW&���C��B�'&�fVDC��'&�fVE�B�FW'FVDC��FW'FVE�B��vV�7���vV�7���""��ff�6W#���ff�6W'��""�&V6���&V6����""���FW3����FW7��"'ӷҒ��&���u6W�6�V�FW$��&���w����&���uf���F���3�g2���dg&��&�r���7F�f�G���s�7F�f�G����7F�f�G�g&��&�r��Ӱ�Р������������WF����2&R�6�VB6W'fW"�6�FS�F�R6ƖV�B�WfW"6VW2����6��������������7��2gV�7F���fW&�g���6��6�v���◲�W7B���&WGW&�6���v�B6"�'2�'fW&�g����"���6��6�v�6��6�v�������Ғ��Ц7��2gV�7F���6WE��6��6�v���Wu����W7B���6���v�B6"�'2�'6WE���"���6��6�v�6��6�v����Wu����Wu��Ғ��Ц7��2gV�7F���7&VFTwV&B�6��6�v����R��◲�W7B���6���v�B6"�'2�&7&VFU�wV&B"���6��6�v�6��6�v�����S���R��������##3B'Ғ��Ц7��2gV�7F���&W6WE��6��6�v◲�W7B���6���v�B6"�'2�'&W6WE���"���6��6�v�6��6�v�Ғ��Ц7��2gV�7F���&V6�&E6�v��6��6�v◲�W7B���6���v�B6"�'2�'&V6�&E�6�v����"���6��6�v�6��6�v�Ғ��Ц7��2gV�7F����W�D6�V�FW"��W����W7B���&WGW&�6���v�B6"�'2�&�W�E�6�V�FW""��6�V�FW%��W���W�Ғ��Ц7��2gV�7F���6WEW6W$7F�fR�6��6�v��7F�fR���W7B���6���v�B6"�g&�҂'W6W'2"��WFFR��7F�fS�7F�fWҒ�W�&6��6�v�"�6��6�v⒓�Р������������vV�W&�2&�rw&�FW'2������������7��2gV�7F�����6W'E&�r�F&�R�&�r���W7B���6���v�B6"�g&�҇F&�R���6W'B�&�r���Ц7��2gV�7F���WFFU&�r�F&�R��D6����Ef��F6����W7B���6���v�B6"�g&�҇F&�R��WFFR�F6���W��D6����Ef��Ц7��2gV�7F���FV�WFU&�r�F&�R��D6����Ef��W7B���6���v�B6"�g&�҇F&�R��FV�WFR���W��D6����Ef��Ц7��2gV�7F���W6W'E&�r�F&�R�&�r���W7B���6���v�B6"�g&�҇F&�R��W6W'B�&�r���Р������������W"�V�F�G�w&�FR�V�W'2W6VB'��2�'C"�2�'C2�2������������f"D"���6��f�wW&VC�4��d�uU$TB����D��7FFS���D��7FFR��WF���fW&�g���fW&�g����6WE��6WE���7&VFTwV&C�7&VFTwV&B�&W6WE��&W6WE���&V6�&E6�v��&V6�&E6�v���6WEW6W$7F�fS�6WEW6W$7F�fW���6�V�FW'3���W�C��W�D6�V�FW'���6��3�����6W'C�gV�7F���2��&WGW&���6W'E&�r�&6��2"�6��F�&�r�2������WFFS�gV�7F��↖B�F6���&WGW&�WFFU&�r�&6��2"�&�B"ƖB�F6������FE7W�V�V�C�gV�7F���6�ĖB�7W��&WGW&���6W'E&�r�&6���7W�V�V�G2"��6����C�6�ĖB�C�7W�B�'��7W�'��FW�C�7W�FW�Gғ�Т���V�G3�����6W'C�gV�7F���R��&WGW&���6W'E&�r�'V�G2"�V�EF�&�r�R������WFFS�gV�7F���6��6�v��F6���&WGW&�WFFU&�r�'V�G2"�&6��6�v�"�6��6�v��F6������&V��fS�gV�7F���6��6�v◲&WGW&�FV�WFU&�r�'V�G2"�&6��6�v�"�6��6�v⓲Т���6�V6����G3���66�gV�7F���7�B�'���&WGW&�WFFU&�r�&6�V6����G2"�&�B"�7�BǶ�7E�66��WrFFR���F��4�7G&��r����7E�66��'��'�ғ�Т���6�C���FD6���VâgV�7F���6���&WGW&���6W'E&�r�&6�E�6���V�2"���C�6��B���S�6����R�FW67&�F���6��FW67��"'ғ����FD�W76vS�gV�7F���җ�&WGW&���6W'E&�r�&6�E��W76vW2"��6���V���C���6���V��g&���6��6�v���g&����""���S�����W��""�&�����&����FW�C���FW�B�C���Gғ�Т���G'V6�3�����6W'C�gV�7F���B��&WGW&���6W'E&�r�'G'V6�2"�G'V6�F�&�r�B������6�V6��WC�gV�7F��↖B�F��T�WB��&WGW&�WFFU&�r�'G'V6�2"�&�B"ƖBǷF��U��WC�F��T�WGғ�Т���&W�'G3�����6W'C�gV�7F���"��&WGW&���6W'E&�r�'&W�'G2"�&W�'EF�&�r�"������WFFS�gV�7F��↖B�F6���&WGW&�WFFU&�r�'&W�'G2"�&�B"ƖB�F6���Т���&���s�����6W'C�gV�7F���b��&WGW&���6W'E&�r�'&���u�f���F���2"�eF�&�r�b������WFFS�gV�7F��↖B�F6���&WGW&�WFFU&�r�'&���u�f���F���2"�&�B"ƖB�F6���Т���7F�f�G������6W'C�gV�7F���V�G'���&WGW&���6W'E&�r�&7F�f�G����r"��C�V�G'��B�G�S�V�G'��G�R�7F�#�V�G'��7F�"�FW�C�V�G'��FW�Gғ�Т����7V'67&�&RF�ƗfR6��vW2g&���F�W"wV&G2r6W76���2���6��vR�26��VBv�F�F�P�F&�R��Rv�V�WfW"&�r6��vW3�6��W'2G��6�ǒ&VfWF6�F�B6Ɩ6R�B&R�&V�FW"���7V'67&�&U&V�F��S�gV�7F�����6��vR����b�6"�&WGW&��V�ð�f"F&�W2��'V�G2"�&6��2"�&6���7W�V�V�G2"�&6�E��W76vW2"�'G'V6�2"�'&W�'G2"�'&���u�f���F���2"�&6�V6����G2"�&7F�f�G����r%Ӱ�f"6���V��6"�6���V&6B�ƗfR"���F&�W2�f�$V6��gV�7F���B���6���V����'�7Fw&W5�6��vW2"��WfV�C�"�"�66�V��'V&Ɩ2"�F&�S�G��gV�7F������B����6��vR�B����B��ғ��ғ��6���V��7V'67&�&R����&WGW&�6���Vð�ЧӰ��v��F�r���4E�D"�D#��Ғ���
+    submitted_at:r.submittedAt, reviewed_at:r.reviewedAt, reviewed_by:r.reviewedBy, supervisor_notes:r.supervisorNotes||""};
+}
+function pvFromRow(r){
+  return {id:r.id, vtype:r.vtype||"", call:r.call_id||"", reportId:r.report_id||"", post:r.post||"", occurred:r.occurred,
+    locationInLot:r.location_in_lot||"", plate:r.plate||"", plateState:r.plate_state||"", vehicleDesc:r.vehicle_desc||"",
+    driver:r.driver||"", narrative:r.narrative||"", actionTaken:r.action_taken||"",
+    notifications:{police:!!r.notify_police, propMgmt:!!r.notify_prop_mgmt, tow:!!r.notify_tow},
+    whoElseNotified:r.who_else_notified||"", status:r.status, writtenBy:r.written_by||"",
+    writtenByCallsign:r.written_by_callsign||"", submittedAt:r.submitted_at, reviewedAt:r.reviewed_at,
+    reviewedBy:r.reviewed_by, supervisorNotes:r.supervisor_notes||""};
+}
+function pvToRow(v){
+  return {id:v.id, vtype:v.vtype||"", call_id:v.call||null, report_id:v.reportId||null, post:v.post||"", occurred:v.occurred,
+    location_in_lot:v.locationInLot||"", plate:v.plate||"", plate_state:v.plateState||"", vehicle_desc:v.vehicleDesc||"",
+    driver:v.driver||"", narrative:v.narrative||"", action_taken:v.actionTaken||"",
+    notify_police:!!(v.notifications&&v.notifications.police), notify_prop_mgmt:!!(v.notifications&&v.notifications.propMgmt),
+    notify_tow:!!(v.notifications&&v.notifications.tow), who_else_notified:v.whoElseNotified||"", status:v.status,
+    written_by:v.writtenBy||"", written_by_callsign:v.writtenByCallsign||"", submitted_at:v.submittedAt,
+    reviewed_at:v.reviewedAt, reviewed_by:v.reviewedBy, supervisor_notes:v.supervisorNotes||""};
+}
+function activityFromRow(r){ return {at:r.at, type:r.type, actor:r.actor, text:r.text}; }
+
+/* ---------- load everything into the STATE shape the UI expects ---------- */
+async function loadAllState(){
+  must();
+  var results = await Promise.all([
+    sb.from("users_public").select("*"),
+    sb.from("units").select("*"),
+    sb.from("posts").select("*"),
+    sb.from("checkpoints").select("*"),
+    sb.from("calls").select("*").order("created_at",{ascending:false}),
+    sb.from("call_supplements").select("*").order("at",{ascending:true}),
+    sb.from("chat_channels").select("*"),
+    sb.from("chat_messages").select("*").order("at",{ascending:true}),
+    sb.from("trucks").select("*").order("time_in",{ascending:false}),
+    sb.from("reports").select("*"),
+    sb.from("parking_violations").select("*"),
+    sb.from("police_on_property").select("*"),
+    sb.from("activity_log").select("*").order("at",{ascending:false}).limit(500),
+    sb.from("counters").select("*")
+  ]);
+  results.forEach(chk);
+  var users = results[0].data, units = results[1].data, posts = results[2].data, checkpoints = results[3].data,
+    calls = results[4].data, supplements = results[5].data, channels = results[6].data, messages = results[7].data,
+    trucks = results[8].data, reports = results[9].data, pvs = results[10].data, police = results[11].data,
+    activity = results[12].data, counters = results[13].data;
+
+  var callsOut = calls.map(callFromRow);
+  supplements.forEach(function(s){
+    var c = callsOut.find(function(x){return x.id===s.call_id;});
+    if(c) c.narrativeSupplements.push({at:s.at, by:s.by, text:s.text});
+  });
+  var postsOut = posts.map(function(p){
+    return {id:p.id, name:p.name, kind:p.kind||"", org:p.org||"", address:p.address||"",
+      checkpoints: checkpoints.filter(function(c){return c.post_id===p.id;}).map(function(c){
+        return {id:c.id, name:c.name, intervalMin:c.interval_min, lastScan:c.last_scan, lastScanBy:c.last_scan_by};
+      })};
+  });
+  var counterMap = {}; counters.forEach(function(c){ counterMap[c.key]=c.value; });
+
+  return {
+    meta: {site:"Ridgecrest Threat Advisory", createdAt:null},
+    users: users.map(function(u){ return {callsign:u.callsign, name:u.name, role:u.role, title:u.title||"",
+      active:u.active, lastSignIn:u.last_sign_in, mustChangePin:u.must_change_pin}; }),
+    units: units.map(unitFromRow),
+    posts: postsOut,
+    calls: callsOut,
+    callSeq: counterMap.call||0,
+    chat: { channels: channels.map(function(c){return {id:c.id,name:c.name,desc:c.description||""};}), messages: messages.map(function(m){
+      return {channel:m.channel_id, from:m.from_callsign||"", name:m.name||"", bolo:!!m.bolo, text:m.text, at:m.at};
+    })},
+    trucks: trucks.map(truckFromRow),
+    reportSeq: counterMap.report||0,
+    reports: reports.map(reportFromRow),
+    policeOnProperty: police.map(function(p){return {id:p.id, arrivedAt:p.arrived_at, departedAt:p.departed_at,
+      agency:p.agency||"", officer:p.officer||"", reason:p.reason||"", notes:p.notes||""};}),
+    parkingSeq: counterMap.parking||0,
+    parkingViolations: pvs.map(pvFromRow),
+    activityLog: activity.map(activityFromRow)
+  };
+}
+
+/* ---------- auth (PINs are hashed server-side; the client never sees pin_hash) ---------- */
+async function verifyPin(callsign, pin){ must(); return chk(await sb.rpc("verify_pin", {p_callsign:callsign, p_pin:pin})); }
+async function setPin(callsign, newPin){ must(); chk(await sb.rpc("set_pin", {p_callsign:callsign, p_new_pin:newPin})); }
+async function createGuard(callsign, name, pin){ must(); chk(await sb.rpc("create_guard", {p_callsign:callsign, p_name:name, p_pin:pin||"1234"})); }
+async function resetPin(callsign){ must(); chk(await sb.rpc("reset_pin", {p_callsign:callsign})); }
+async function recordSignIn(callsign){ must(); chk(await sb.rpc("record_sign_in", {p_callsign:callsign})); }
+async function nextCounter(key){ must(); return chk(await sb.rpc("next_counter", {counter_key:key})); }
+async function setUserActive(callsign, active){ must(); chk(await sb.from("users").update({active:active}).eq("callsign",callsign)); }
+
+/* ---------- generic row writers ---------- */
+async function insertRow(table, row){ must(); chk(await sb.from(table).insert(row)); }
+async function updateRow(table, idCol, idVal, patch){ must(); chk(await sb.from(table).update(patch).eq(idCol, idVal)); }
+async function deleteRow(table, idCol, idVal){ must(); chk(await sb.from(table).delete().eq(idCol, idVal)); }
+async function upsertRow(table, row){ must(); chk(await sb.from(table).upsert(row)); }
+
+/* ---------- per-entity write helpers used by app.js/part2.js/part3.js ---------- */
+var DB = {
+  configured: CONFIGURED,
+  loadAllState: loadAllState,
+  auth: {verifyPin:verifyPin, setPin:setPin, createGuard:createGuard, resetPin:resetPin, recordSignIn:recordSignIn, setUserActive:setUserActive},
+  counters: {next:nextCounter},
+  calls: {
+    insert: function(c){ return insertRow("calls", callToRow(c)); },
+    update: function(id, patch){ return updateRow("calls","id",id,patch); },
+    addSupplement: function(callId, supp){ return insertRow("call_supplements", {call_id:callId, at:supp.at, by:supp.by, text:supp.text}); }
+  },
+  units: {
+    insert: function(u){ return insertRow("units", unitToRow(u)); },
+    update: function(callsign, patch){ return updateRow("units","callsign",callsign,patch); },
+    remove: function(callsign){ return deleteRow("units","callsign",callsign); }
+  },
+  checkpoints: {
+    scan: function(cpId, by){ return updateRow("checkpoints","id",cpId,{last_scan:new Date().toISOString(), last_scan_by:by}); }
+  },
+  chat: {
+    addChannel: function(ch){ return insertRow("chat_channels", {id:ch.id, name:ch.name, description:ch.desc||""}); },
+    addMessage: function(m){ return insertRow("chat_messages", {channel_id:m.channel, from_callsign:m.from||"", name:m.name||"", bolo:!!m.bolo, text:m.text, at:m.at}); }
+  },
+  trucks: {
+    insert: function(t){ return insertRow("trucks", truckToRow(t)); },
+    checkOut: function(id, timeOut){ return updateRow("trucks","id",id,{time_out:timeOut}); }
+  },
+  reports: {
+    insert: function(r){ return insertRow("reports", reportToRow(r)); },
+    update: function(id, patch){ return updateRow("reports","id",id,patch); }
+  },
+  parking: {
+    insert: function(v){ return insertRow("parking_violations", pvToRow(v)); },
+    update: function(id, patch){ return updateRow("parking_violations","id",id,patch); }
+  },
+  activity: {
+    insert: function(entry){ return insertRow("activity_log", {at:entry.at, type:entry.type, actor:entry.actor, text:entry.text}); }
+  },
+  /* Subscribe to live changes from other guards' sessions. onChange is called with the
+     table name whenever a row changes; callers typically refetch that slice and re-render. */
+  subscribeRealtime: function(onChange){
+    if(!sb) return null;
+    var tables = ["units","calls","call_supplements","chat_messages","trucks","reports","parking_violations","checkpoints","activity_log"];
+    var channel = sb.channel("cad-live");
+    tables.forEach(function(t){
+      channel.on("postgres_changes", {event:"*", schema:"public", table:t}, function(payload){ onChange(t, payload); });
+    });
+    channel.subscribe();
+    return channel;
+  }
+};
+
+window.__CAD_DB = DB;
+})();
