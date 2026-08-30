@@ -103,13 +103,15 @@ async function loadAllState(){
     sb.from("parking_violations").select("*"),
     sb.from("police_on_property").select("*"),
     sb.from("activity_log").select("*").order("at",{ascending:false}).limit(500),
-    sb.from("counters").select("*")
+    sb.from("counters").select("*"),
+    sb.from("checkpoint_scans").select("*").order("at",{ascending:false}).limit(2000),
+    sb.from("guard_locations").select("*")
   ]);
   results.forEach(chk);
   var users = results[0].data, units = results[1].data, posts = results[2].data, checkpoints = results[3].data,
     calls = results[4].data, supplements = results[5].data, channels = results[6].data, messages = results[7].data,
     trucks = results[8].data, reports = results[9].data, pvs = results[10].data, police = results[11].data,
-    activity = results[12].data, counters = results[13].data;
+    activity = results[12].data, counters = results[13].data, scans = results[14].data, liveLocs = results[15].data;
 
   var callsOut = calls.map(callFromRow);
   supplements.forEach(function(s){
@@ -142,7 +144,13 @@ async function loadAllState(){
       agency:p.agency||"", officer:p.officer||"", reason:p.reason||"", notes:p.notes||""};}),
     parkingSeq: counterMap.parking||0,
     parkingViolations: pvs.map(pvFromRow),
-    activityLog: activity.map(activityFromRow)
+    activityLog: activity.map(activityFromRow),
+    checkpointScans: scans.map(function(s){ return {id:s.id, checkpointId:s.checkpoint_id, postId:s.post_id,
+      callsign:s.callsign, at:s.at, lat:s.lat, lng:s.lng, accuracy:s.accuracy_m}; }),
+    // Each guard's most recent live GPS ping (one row per callsign — see guard_locations in
+    // schema.sql). Feeds the Live Map tab; checkpointScans above supplies the movement trail.
+    guardLocations: liveLocs.map(function(g){ return {callsign:g.callsign, lat:g.lat, lng:g.lng,
+      accuracy:g.accuracy_m, updatedAt:g.updated_at}; })
   };
 }
 
@@ -178,11 +186,27 @@ var DB = {
     remove: function(callsign){ return deleteRow("units","callsign",callsign); }
   },
   checkpoints: {
-    scan: function(cpId, by){ return updateRow("checkpoints","id",cpId,{last_scan:new Date().toISOString(), last_scan_by:by}); }
+    /* loc is {lat,lng,accuracy} from the guard's device GPS, or null if it wasn't available —
+       either way the scan still counts. Updates the checkpoint's "last scanned" fields (fast
+       display) and appends a row to checkpoint_scans (full GPS history for the movement map). */
+    scan: function(cpId, postId, by, loc){
+      var now = new Date().toISOString();
+      return Promise.all([
+        updateRow("checkpoints","id",cpId,{last_scan:now, last_scan_by:by}),
+        insertRow("checkpoint_scans", {checkpoint_id:cpId, post_id:postId, callsign:by, at:now,
+          lat: loc ? loc.lat : null, lng: loc ? loc.lng : null, accuracy_m: loc ? loc.accuracy : null})
+      ]);
+    }
   },
   chat: {
     addChannel: function(ch){ return insertRow("chat_channels", {id:ch.id, name:ch.name, description:ch.desc||""}); },
     addMessage: function(m){ return insertRow("chat_messages", {channel_id:m.channel, from_callsign:m.from||"", name:m.name||"", bolo:!!m.bolo, text:m.text, at:m.at}); }
+  },
+  /* One row per callsign — upsert overwrites it each ping, so this table always holds only the
+     latest known position (checkpoint_scans keeps the permanent history). Feeds the Live Map tab. */
+  locations: {
+    upsert: function(callsign, loc){ return upsertRow("guard_locations", {callsign:callsign, lat:loc.lat, lng:loc.lng,
+      accuracy_m:loc.accuracy, updated_at:new Date().toISOString()}); }
   },
   trucks: {
     insert: function(t){ return insertRow("trucks", truckToRow(t)); },
@@ -203,7 +227,7 @@ var DB = {
      table name whenever a row changes; callers typically refetch that slice and re-render. */
   subscribeRealtime: function(onChange){
     if(!sb) return null;
-    var tables = ["units","calls","call_supplements","chat_messages","trucks","reports","parking_violations","checkpoints","activity_log"];
+    var tables = ["units","calls","call_supplements","chat_messages","trucks","reports","parking_violations","checkpoints","activity_log","checkpoint_scans","guard_locations"];
     var channel = sb.channel("cad-live");
     tables.forEach(function(t){
       channel.on("postgres_changes", {event:"*", schema:"public", table:t}, function(payload){ onChange(t, payload); });
