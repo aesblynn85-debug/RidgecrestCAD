@@ -286,7 +286,7 @@ function wireLogin(){
       return;
     }
     uiState.loginErr="";
-    session = {callsign:u.callsign, name:u.name, role:u.role};
+    session = {callsign:u.callsign, name:u.name, role:u.role, assignedPostId:u.assignedPostId||""};
     sessionStorage.setItem("cad_session", JSON.stringify(session));
     u.lastSignIn = nowIso();
     logActivity("AUTH", u.callsign, u.name+" ("+u.callsign+") signed in");
@@ -412,6 +412,16 @@ async function init(){
     realtimeTimer = setTimeout(function(){
       DB.loadAllState().then(function(fresh){
         STATE = fresh; window.__CAD.STATE = STATE;
+        // Pick up role/map-access changes made to this account from elsewhere (e.g. a dispatcher
+        // changing this supervisor's assigned site) without requiring a fresh sign-in.
+        if(session){
+          var me = STATE.users.find(function(u){ return u.callsign===session.callsign; });
+          if(me){
+            var changed = session.role!==me.role || session.name!==me.name || session.assignedPostId!==(me.assignedPostId||"");
+            session.role = me.role; session.name = me.name; session.assignedPostId = me.assignedPostId||"";
+            if(changed) sessionStorage.setItem("cad_session", JSON.stringify(session));
+          }
+        }
         var active = document.activeElement, tag = active && active.tagName;
         if(tag==="INPUT" || tag==="TEXTAREA" || tag==="SELECT") return; // apply silently; next render will pick it up
         render();
