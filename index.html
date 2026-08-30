@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<!-- Leaflet + OpenStreetMap tiles power the Live Map tab — free, no API key or billing account. -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <style>
 :root{
   --background:215 28% 8%;--foreground:210 20% 96%;--border:215 18% 20%;
@@ -162,6 +164,7 @@ table.datatable tr:hover td{background:hsl(var(--accent)/.4);}
 <div id="recoveryBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:hsl(var(--warn));color:#241a00;padding:9px 16px;font-size:12.5px;align-items:center;justify-content:center;gap:8px;font-family:var(--font-sans);"></div>
 <div id="root"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="./src/config.js"></script>
 <script src="./src/db.js"></script>
 <!-- app.bundle.js is generated from app.js + part2.js + part3.js (they share one closure
