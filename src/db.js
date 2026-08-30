@@ -129,7 +129,8 @@ async function loadAllState(){
   return {
     meta: {site:"Ridgecrest Threat Advisory", createdAt:null},
     users: users.map(function(u){ return {callsign:u.callsign, name:u.name, role:u.role, title:u.title||"",
-      active:u.active, lastSignIn:u.last_sign_in, mustChangePin:u.must_change_pin}; }),
+      active:u.active, lastSignIn:u.last_sign_in, mustChangePin:u.must_change_pin,
+      assignedPostId:u.assigned_post_id||""}; }),
     units: units.map(unitFromRow),
     posts: postsOut,
     calls: callsOut,
@@ -161,7 +162,9 @@ async function createGuard(callsign, name, pin){ must(); chk(await sb.rpc("creat
 async function resetPin(callsign){ must(); chk(await sb.rpc("reset_pin", {p_callsign:callsign})); }
 async function recordSignIn(callsign){ must(); chk(await sb.rpc("record_sign_in", {p_callsign:callsign})); }
 async function nextCounter(key){ must(); return chk(await sb.rpc("next_counter", {counter_key:key})); }
-async function setUserActive(callsign, active){ must(); chk(await sb.from("users").update({active:active}).eq("callsign",callsign)); }
+async function setUserActive(callsign, active){ must(); chk(await sb.rpc("set_user_active", {p_callsign:callsign, p_active:active})); }
+/* postId "" means "every site" (Dispatch/Admin) — stored as null so the assigned_post_id FK stays happy. */
+async function setAssignedPost(callsign, postId){ must(); chk(await sb.rpc("set_assigned_post", {p_callsign:callsign, p_post_id:postId||null})); }
 
 /* ---------- generic row writers ---------- */
 async function insertRow(table, row){ must(); chk(await sb.from(table).insert(row)); }
@@ -173,7 +176,8 @@ async function upsertRow(table, row){ must(); chk(await sb.from(table).upsert(ro
 var DB = {
   configured: CONFIGURED,
   loadAllState: loadAllState,
-  auth: {verifyPin:verifyPin, setPin:setPin, createGuard:createGuard, resetPin:resetPin, recordSignIn:recordSignIn, setUserActive:setUserActive},
+  auth: {verifyPin:verifyPin, setPin:setPin, createGuard:createGuard, resetPin:resetPin, recordSignIn:recordSignIn,
+    setUserActive:setUserActive, setAssignedPost:setAssignedPost},
   counters: {next:nextCounter},
   calls: {
     insert: function(c){ return insertRow("calls", callToRow(c)); },
