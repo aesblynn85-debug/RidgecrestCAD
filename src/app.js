@@ -13,7 +13,10 @@ var NAV = [
   {id:"parking", label:"Parking Lot Violations", ic:"⚠"},
   {id:"reports", label:"Field Reports", ic:"☷"},
   {id:"log", label:"Activity Log", ic:"≡"},
-  {id:"users", label:"Users", ic:"☺"}
+  {id:"users", label:"Users", ic:"☺"},
+  // Dispatch/Supervisor/Admin only — filtered out of the sidebar for guards in renderShell,
+  // and renderMap() itself refuses to render for anyone else as a second line of defense.
+  {id:"map", label:"Live Map", ic:"◎", supvOnly:true}
 ];
 
 var REPORT_TYPES = [
@@ -144,6 +147,26 @@ function persist(writeFn, label){
 }
 window.addEventListener("beforeunload", function(){ writeLocalBackup(pendingWrites===0); });
 
+/* ---------------- live location tracking ----------------
+   Guards only, and only while this browser tab is open and signed in — pings the device's GPS
+   on an interval and upserts it to guard_locations, which feeds the Live Map tab that Dispatch/
+   Supervisors/Admins see. Never blocks or errors the rest of the app if location is denied. */
+var liveTrackTimer = null;
+function startLiveTracking(){
+  if(liveTrackTimer || !session || session.role!=="GUARD" || !navigator.geolocation) return;
+  function ping(){
+    if(!session || session.role!=="GUARD" || !DB || !DB.configured) return;
+    navigator.geolocation.getCurrentPosition(function(pos){
+      DB.locations.upsert(session.callsign, {lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy})
+        .catch(function(e){ console.warn("live location update failed", e); });
+    }, function(){ /* denied/unavailable this round — quietly try again next interval */ },
+    { enableHighAccuracy:true, timeout:8000, maximumAge:20000 });
+  }
+  ping();
+  liveTrackTimer = setInterval(ping, 45000);
+}
+function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); liveTrackTimer=null; } }
+
 /* ---------------- router / shell ---------------- */
 window.addEventListener("hashchange", function(){
   route = (location.hash||"#dispatch").replace("#","");
@@ -168,7 +191,7 @@ function renderShell(){
   root.innerHTML =
     '<div id="sidebar">'+
       '<div class="brand"><div class="mark">R</div><div><div class="name">Ridgecrest CAD</div><div class="sub">Dispatch Console</div></div></div>'+
-      '<ul id="navlist">'+ NAV.map(function(n){
+      '<ul id="navlist">'+ NAV.filter(function(n){ return !n.supvOnly || session.role==="SUPV"; }).map(function(n){
         return '<li><button data-nav="'+n.id+'" class="'+(route===n.id?"active":"")+'"><span class="ic">'+n.ic+'</span>'+escapeHtml(n.label)+'</button></li>';
       }).join("") +'</ul>'+
       '<div class="foot">'+
@@ -216,6 +239,7 @@ function renderView(){
     case "reports": return renderReports();
     case "log": return renderLog();
     case "users": return renderUsers();
+    case "map": return renderMap();
     default: return renderDispatch();
   }
 }
@@ -267,6 +291,7 @@ function wireLogin(){
     u.lastSignIn = nowIso();
     logActivity("AUTH", u.callsign, u.name+" ("+u.callsign+") signed in");
     if(DB.configured) DB.auth.recordSignIn(u.callsign).catch(function(e){ console.warn("record_sign_in failed", e); });
+    startLiveTracking();
     render();
   }
 }
@@ -279,6 +304,7 @@ function wireGlobal(){
   var so = document.querySelector('[data-action="signout"]');
   if(so) so.addEventListener("click", function(){
     logActivity("AUTH", session.callsign, session.name+" signed out");
+    stopLiveTracking();
     session = null;
     sessionStorage.removeItem("cad_session");
     render();
@@ -299,6 +325,7 @@ function wireView(){
   if(route==="reports") wireReports();
   if(route==="log") wireLog();
   if(route==="users") wireUsers();
+  if(route==="map") wireMap();
 }
 
 /* app.js continues in part2.js / part3.js, appended below via the build step */
@@ -375,6 +402,7 @@ async function init(){
   window.__CAD.STATE = STATE;
   render();
   checkLocalBackup();
+  startLiveTracking();
   var realtimeTimer = null;
   DB.subscribeRealtime(function(){
     // Another guard's session changed something. Refetch everything (simple and infrequent enough
