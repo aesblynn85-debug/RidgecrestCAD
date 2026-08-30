@@ -255,14 +255,31 @@ function renderSites(){
   html += '</div>';
   return html;
 }
+/* Reads the device's current GPS position. Never rejects — resolves null on denial/timeout/no
+   support — so a scan is never blocked by a guard's location settings. */
+function getGeo(){
+  return new Promise(function(resolve){
+    if(!navigator.geolocation){ resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      function(pos){ resolve({lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy}); },
+      function(){ resolve(null); },
+      { enableHighAccuracy:true, timeout:10000, maximumAge:30000 }
+    );
+  });
+}
+
 function wireSites(){
   document.querySelectorAll("[data-scan-cp]").forEach(function(b){
     b.addEventListener("click", function(){
       var pid=b.getAttribute("data-scan-post"), cid=b.getAttribute("data-scan-cp");
       var p=STATE.posts.find(function(x){return x.id===pid;}); var cp=p.checkpoints.find(function(x){return x.id===cid;});
-      cp.lastScan = nowIso(); cp.lastScanBy = session.callsign;
-      logActivity("CHECKPOINT", session.callsign, "Tour scan — "+cp.name+" at "+pid+" by "+session.callsign);
-      persist(function(){ return DB.checkpoints.scan(cid, session.callsign); }, "checkpoint scan");
+      b.disabled = true; var origText = b.textContent; b.textContent = "Scanning…";
+      getGeo().then(function(loc){
+        cp.lastScan = nowIso(); cp.lastScanBy = session.callsign;
+        logActivity("CHECKPOINT", session.callsign, "Tour scan — "+cp.name+" at "+pid+" by "+session.callsign+(loc?"":" (location unavailable)"));
+        persist(function(){ return DB.checkpoints.scan(cid, pid, session.callsign, loc); }, "checkpoint scan");
+        if(!loc) toast("Scan logged — couldn't get this device's location.");
+      });
     });
   });
 }
