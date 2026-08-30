@@ -14,6 +14,15 @@
 --      and rewrite these policies to check auth.uid() instead of allowing
 --      anon wholesale. This is the "correct" fix but is a larger change.
 -- Flagging this so it's a conscious choice, not a surprise.
+--
+-- checkpoint_scans stores each guard's GPS location at scan time, and
+-- guard_locations stores their live position updated automatically while
+-- signed in — both more sensitive than the rest of this data. They're
+-- covered by the same anon policy as everything else here, so tightening
+-- access (see above) applies doubly to these two tables. The Live Map tab
+-- is restricted to role='SUPV' only in the UI (src/part3.js renderMap/
+-- wireMap) — that is a client-side check, not a database one, so anyone
+-- with the anon key can still read guard_locations directly today.
 
 create extension if not exists "pgcrypto" with schema public;
 
@@ -57,6 +66,37 @@ create table if not exists checkpoints (
   interval_min int default 120,
   last_scan timestamptz,
   last_scan_by text
+);
+
+-- Every tour scan gets its own row here with the guard's device GPS at the
+-- moment they hit "Scan", so movement can be plotted on a map over time —
+-- not just the checkpoint's most recent scan (that stays on checkpoints
+-- above for the fast "last scanned" display). lat/lng/accuracy are nullable
+-- because a scan still counts if the guard's device denies/lacks location.
+create table if not exists checkpoint_scans (
+  id bigint generated always as identity primary key,
+  checkpoint_id text not null references checkpoints(id) on delete cascade,
+  post_id text not null references posts(id) on delete cascade,
+  callsign text not null,
+  at timestamptz not null default now(),
+  lat double precision,
+  lng double precision,
+  accuracy_m double precision
+);
+create index if not exists checkpoint_scans_checkpoint_id_idx on checkpoint_scans(checkpoint_id);
+create index if not exists checkpoint_scans_callsign_at_idx on checkpoint_scans(callsign, at desc);
+
+-- Each guard's most recent live GPS ping — one row per callsign, overwritten on every
+-- upsert, so this stays cheap to query regardless of shift length. Populated by the app's
+-- startLiveTracking() (src/app.js) roughly every 45s while a guard's session is open, and
+-- read by the Live Map tab (src/part3.js renderMap/wireMap), which is restricted to
+-- Dispatch/Supervisors/Admins (role='SUPV') in the UI.
+create table if not exists guard_locations (
+  callsign text primary key,
+  lat double precision not null,
+  lng double precision not null,
+  accuracy_m double precision,
+  updated_at timestamptz not null default now()
 );
 
 -- ---------- dispatch calls ----------
@@ -225,6 +265,8 @@ alter table users enable row level security;
 alter table units enable row level security;
 alter table posts enable row level security;
 alter table checkpoints enable row level security;
+alter table checkpoint_scans enable row level security;
+alter table guard_locations enable row level security;
 alter table calls enable row level security;
 alter table call_supplements enable row level security;
 alter table chat_channels enable row level security;
@@ -239,7 +281,7 @@ alter table counters enable row level security;
 do $$
 declare t text;
 begin
-  for t in select unnest(array['users','units','posts','checkpoints','calls','call_supplements',
+  for t in select unnest(array['users','units','posts','checkpoints','checkpoint_scans','guard_locations','calls','call_supplements',
     'chat_channels','chat_messages','trucks','reports','parking_violations',
     'police_on_property','activity_log','counters'])
   loop
@@ -301,5 +343,20 @@ revoke select (pin_hash) on users from anon, authenticated;
 
 -- ================= Realtime =================
 -- Broadcast row changes to every connected guard so screens stay in sync.
-alter publication supabase_realtime add table units, calls, call_supplements,
-  chat_messages, trucks, reports, parking_violations, checkpoints, activity_log;
+-- Written as a guarded loop (instead of one ALTER PUBLICATION ... ADD TABLE
+-- line) so re-running this file against a project that already has some of
+-- these tables published doesn't error out on "already a member".
+do $$
+declare t text;
+begin
+  for t in select unnest(array['units','calls','call_supplements','chat_messages','trucks',
+    'reports','parking_violations','checkpoints','checkpoint_scans','guard_locations','activity_log'])
+  loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
+    ) then
+      execute format('alter publication supabase_realtime add table %I;', t);
+    end if;
+  end loop;
+end $$;
