@@ -59,6 +59,12 @@ create table if not exists posts (
   address text default ''
 );
 
+-- A supervisor account scoped to one site (see users above) only sees that site's guards on
+-- the Live Map; left null (the default), the account sees every site — i.e. Dispatch/Admin.
+-- Added via ALTER rather than inline on the users table above because it references posts,
+-- which is defined after users in this file.
+alter table users add column if not exists assigned_post_id text references posts(id) on delete set null;
+
 create table if not exists checkpoints (
   id text primary key,
   post_id text not null references posts(id) on delete cascade,
@@ -293,7 +299,7 @@ end $$;
 -- Never expose pin_hash to the client. Views/selects from the app should go
 -- through this instead of "select * from users" where possible.
 create or replace view users_public as
-  select callsign, name, role, title, active, last_sign_in, must_change_pin from users;
+  select callsign, name, role, title, active, last_sign_in, must_change_pin, assigned_post_id from users;
 
 -- ================= PIN auth helpers (never send pin_hash to the client) =================
 create or replace function verify_pin(p_callsign text, p_pin text)
@@ -327,11 +333,31 @@ returns void language sql security definer set search_path = public, extensions 
   update users set last_sign_in = now() where callsign = p_callsign;
 $$;
 
+-- Sets which site a SUPV account's Live Map is scoped to (src/part3.js renderUsers' "Map
+-- access" control); p_post_id of null means "every site" (Dispatch/Admin). Like the other
+-- users writes above, this goes through a security-definer RPC rather than a direct table
+-- update, since anon/authenticated only has a SELECT policy on users (see below).
+create or replace function set_assigned_post(p_callsign text, p_post_id text)
+returns void language sql security definer set search_path = public, extensions as $$
+  update users set assigned_post_id = p_post_id where callsign = p_callsign;
+$$;
+
+-- The Users tab's Activate/Deactivate button (src/part3.js wireUsers) used to call
+-- `sb.from("users").update(...)` directly, which silently fails once RLS locks the users
+-- table down to a SELECT-only policy below — there was no matching UPDATE policy. Routed
+-- through an RPC instead, consistent with every other write to this table.
+create or replace function set_user_active(p_callsign text, p_active boolean)
+returns void language sql security definer set search_path = public, extensions as $$
+  update users set active = p_active where callsign = p_callsign;
+$$;
+
 grant execute on function verify_pin(text,text) to anon, authenticated;
 grant execute on function set_pin(text,text) to anon, authenticated;
 grant execute on function create_guard(text,text,text) to anon, authenticated;
 grant execute on function reset_pin(text) to anon, authenticated;
 grant execute on function record_sign_in(text) to anon, authenticated;
+grant execute on function set_assigned_post(text,text) to anon, authenticated;
+grant execute on function set_user_active(text,boolean) to anon, authenticated;
 grant execute on function next_counter(text) to anon, authenticated;
 
 -- Block direct client reads of the users table (pin_hash lives there) —
