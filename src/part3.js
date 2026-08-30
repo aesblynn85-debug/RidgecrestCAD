@@ -440,3 +440,83 @@ function wireUsers(){
     });
   });
 }
+
+/* ---------------- LIVE MAP (Dispatch / Supervisors / Admins only) ----------------
+   Plots each guard's most recent GPS ping (STATE.guardLocations, refreshed automatically —
+   see startLiveTracking in app.js) on a free Leaflet + OpenStreetMap map, no API key or billing
+   account required. "Show trail" overlays that guard's checkpoint-scan history for today from
+   STATE.checkpointScans. Gated to role SUPV in two places: the sidebar (renderShell) hides the
+   nav item for guards, and this function itself refuses to render for anyone else — the same
+   belt-and-suspenders pattern already used for the other SUPV-only actions in this file. Like
+   every other table in this app, the underlying data is still reachable by anyone with the
+   Supabase anon key (see the SECURITY NOTE in schema.sql) — this is a UI-level restriction,
+   not a database-level one. */
+var RIDGECREST_CENTER = [35.6225, -117.6709]; // Ridgecrest, CA — default view before any pings arrive
+var _liveMapView = null; // remembers pan/zoom across re-renders (the view's DOM, and the map with it, is rebuilt on every render() call)
+function renderMap(){
+  if(!session || session.role!=="SUPV"){
+    return '<div class="card"><div class="empty-state">This view is limited to Dispatch, Supervisors, and Admins.</div></div>';
+  }
+  var locs = STATE.guardLocations||[];
+  var trailCs = uiState.mapTrailFor||"";
+  var html = '<div class="section-head"><h2>Live Guard Map</h2><span class="meta">'+locs.length+' reporting</span></div>';
+  html += '<div class="two-col">';
+  html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">On the Map</div>';
+  if(!locs.length){
+    html += '<div class="empty-state">No live positions yet. A pin appears here automatically once a guard\'s device shares its location while they\'re signed in.</div>';
+  } else {
+    html += locs.slice().sort(function(a,b){ return new Date(b.updatedAt)-new Date(a.updatedAt); }).map(function(l){
+      var stale = (Date.now()-new Date(l.updatedAt).getTime()) > 5*60000;
+      return '<div class="checkbox-row" style="justify-content:space-between;">'+
+        '<div><div>'+escapeHtml(l.callsign)+'</div><div class="small-muted">updated '+fmtAgo(l.updatedAt)+(stale?' <span class="overdue-badge">STALE</span>':'')+'</div></div>'+
+        '<button class="btn sm '+(trailCs===l.callsign?"primary":"")+'" data-map-trail="'+escapeHtml(l.callsign)+'">'+(trailCs===l.callsign?"Hide trail":"Show trail")+'</button></div>';
+    }).join("");
+  }
+  html += '<div class="small-muted" style="margin-top:12px;">Positions refresh roughly every 45 seconds while a guard is signed in on their device. "Show trail" overlays today\'s checkpoint-scan path for that guard.</div>';
+  html += '</div>';
+  html += '<div class="card" style="padding:0;overflow:hidden;"><div id="liveMap" style="height:640px;width:100%;"></div></div>';
+  html += '</div>';
+  return html;
+}
+function wireMap(){
+  if(!session || session.role!=="SUPV") return;
+  document.querySelectorAll("[data-map-trail]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var cs = b.getAttribute("data-map-trail");
+      uiState.mapTrailFor = (uiState.mapTrailFor===cs) ? "" : cs;
+      render();
+    });
+  });
+  var el = document.getElementById("liveMap");
+  if(!el || typeof L==="undefined") return;
+  var map = L.map("liveMap");
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+  var pts = [];
+  (STATE.guardLocations||[]).forEach(function(l){
+    if(l.lat==null || l.lng==null) return;
+    var stale = (Date.now()-new Date(l.updatedAt).getTime()) > 5*60000;
+    var marker = L.circleMarker([l.lat,l.lng], {radius:8, color: stale?"#8a8f98":"#3fa9f5", fillColor: stale?"#8a8f98":"#3fa9f5", fillOpacity:.85, weight:2});
+    marker.bindPopup("<b>"+escapeHtml(l.callsign)+"</b><br>Updated "+fmtAgo(l.updatedAt)+(l.accuracy?"<br>±"+Math.round(l.accuracy)+"m":""));
+    marker.addTo(map);
+    pts.push([l.lat,l.lng]);
+  });
+  if(uiState.mapTrailFor){
+    var todayPrefix = new Date().toISOString().slice(0,10);
+    var trail = (STATE.checkpointScans||[]).filter(function(s){
+      return s.callsign===uiState.mapTrailFor && s.lat!=null && s.lng!=null && (s.at||"").slice(0,10)===todayPrefix;
+    }).slice().sort(function(a,b){ return new Date(a.at)-new Date(b.at); });
+    if(trail.length){
+      L.polyline(trail.map(function(s){ return [s.lat,s.lng]; }), {color:"#f5a83f", weight:3, opacity:.8, dashArray:"4,5"}).addTo(map);
+      trail.forEach(function(s){ pts.push([s.lat,s.lng]); });
+      var last = trail[trail.length-1];
+      L.circleMarker([last.lat,last.lng], {radius:5, color:"#f5a83f", fillColor:"#f5a83f", fillOpacity:1}).addTo(map)
+        .bindPopup("Last scan — "+escapeHtml(uiState.mapTrailFor)+"<br>"+fmtShort(last.at));
+    }
+  }
+  if(_liveMapView){ map.setView(_liveMapView.center, _liveMapView.zoom); }
+  else if(pts.length){ map.fitBounds(pts, {padding:[30,30], maxZoom:16}); }
+  else { map.setView(RIDGECREST_CENTER, 12); }
+  map.on("moveend", function(){ _liveMapView = {center: map.getCenter(), zoom: map.getZoom()}; });
+}
