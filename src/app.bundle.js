@@ -13,7 +13,10 @@ var NAV = [
   {id:"parking", label:"Parking Lot Violations", ic:"⚠"},
   {id:"reports", label:"Field Reports", ic:"☷"},
   {id:"log", label:"Activity Log", ic:"≡"},
-  {id:"users", label:"Users", ic:"☺"}
+  {id:"users", label:"Users", ic:"☺"},
+  // Dispatch/Supervisor/Admin only — filtered out of the sidebar for guards in renderShell,
+  // and renderMap() itself refuses to render for anyone else as a second line of defense.
+  {id:"map", label:"Live Map", ic:"◎", supvOnly:true}
 ];
 
 var REPORT_TYPES = [
@@ -144,6 +147,26 @@ function persist(writeFn, label){
 }
 window.addEventListener("beforeunload", function(){ writeLocalBackup(pendingWrites===0); });
 
+/* ---------------- live location tracking ----------------
+   Guards only, and only while this browser tab is open and signed in — pings the device's GPS
+   on an interval and upserts it to guard_locations, which feeds the Live Map tab that Dispatch/
+   Supervisors/Admins see. Never blocks or errors the rest of the app if location is denied. */
+var liveTrackTimer = null;
+function startLiveTracking(){
+  if(liveTrackTimer || !session || session.role!=="GUARD" || !navigator.geolocation) return;
+  function ping(){
+    if(!session || session.role!=="GUARD" || !DB || !DB.configured) return;
+    navigator.geolocation.getCurrentPosition(function(pos){
+      DB.locations.upsert(session.callsign, {lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy})
+        .catch(function(e){ console.warn("live location update failed", e); });
+    }, function(){ /* denied/unavailable this round — quietly try again next interval */ },
+    { enableHighAccuracy:true, timeout:8000, maximumAge:20000 });
+  }
+  ping();
+  liveTrackTimer = setInterval(ping, 45000);
+}
+function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); liveTrackTimer=null; } }
+
 /* ---------------- router / shell ---------------- */
 window.addEventListener("hashchange", function(){
   route = (location.hash||"#dispatch").replace("#","");
@@ -168,7 +191,7 @@ function renderShell(){
   root.innerHTML =
     '<div id="sidebar">'+
       '<div class="brand"><div class="mark">R</div><div><div class="name">Ridgecrest CAD</div><div class="sub">Dispatch Console</div></div></div>'+
-      '<ul id="navlist">'+ NAV.map(function(n){
+      '<ul id="navlist">'+ NAV.filter(function(n){ return !n.supvOnly || session.role==="SUPV"; }).map(function(n){
         return '<li><button data-nav="'+n.id+'" class="'+(route===n.id?"active":"")+'"><span class="ic">'+n.ic+'</span>'+escapeHtml(n.label)+'</button></li>';
       }).join("") +'</ul>'+
       '<div class="foot">'+
@@ -216,6 +239,7 @@ function renderView(){
     case "reports": return renderReports();
     case "log": return renderLog();
     case "users": return renderUsers();
+    case "map": return renderMap();
     default: return renderDispatch();
   }
 }
@@ -267,6 +291,7 @@ function wireLogin(){
     u.lastSignIn = nowIso();
     logActivity("AUTH", u.callsign, u.name+" ("+u.callsign+") signed in");
     if(DB.configured) DB.auth.recordSignIn(u.callsign).catch(function(e){ console.warn("record_sign_in failed", e); });
+    startLiveTracking();
     render();
   }
 }
@@ -279,6 +304,7 @@ function wireGlobal(){
   var so = document.querySelector('[data-action="signout"]');
   if(so) so.addEventListener("click", function(){
     logActivity("AUTH", session.callsign, session.name+" signed out");
+    stopLiveTracking();
     session = null;
     sessionStorage.removeItem("cad_session");
     render();
@@ -299,6 +325,7 @@ function wireView(){
   if(route==="reports") wireReports();
   if(route==="log") wireLog();
   if(route==="users") wireUsers();
+  if(route==="map") wireMap();
 }
 
 /* app.js continues in part2.js / part3.js, appended below via the build step */
@@ -375,6 +402,7 @@ async function init(){
   window.__CAD.STATE = STATE;
   render();
   checkLocalBackup();
+  startLiveTracking();
   var realtimeTimer = null;
   DB.subscribeRealtime(function(){
     // Another guard's session changed something. Refetch everything (simple and infrequent enough
@@ -648,14 +676,31 @@ function renderSites(){
   html += '</div>';
   return html;
 }
+/* Reads the device's current GPS position. Never rejects — resolves null on denial/timeout/no
+   support — so a scan is never blocked by a guard's location settings. */
+function getGeo(){
+  return new Promise(function(resolve){
+    if(!navigator.geolocation){ resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      function(pos){ resolve({lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy}); },
+      function(){ resolve(null); },
+      { enableHighAccuracy:true, timeout:10000, maximumAge:30000 }
+    );
+  });
+}
+
 function wireSites(){
   document.querySelectorAll("[data-scan-cp]").forEach(function(b){
     b.addEventListener("click", function(){
       var pid=b.getAttribute("data-scan-post"), cid=b.getAttribute("data-scan-cp");
       var p=STATE.posts.find(function(x){return x.id===pid;}); var cp=p.checkpoints.find(function(x){return x.id===cid;});
-      cp.lastScan = nowIso(); cp.lastScanBy = session.callsign;
-      logActivity("CHECKPOINT", session.callsign, "Tour scan — "+cp.name+" at "+pid+" by "+session.callsign);
-      persist(function(){ return DB.checkpoints.scan(cid, session.callsign); }, "checkpoint scan");
+      b.disabled = true; var origText = b.textContent; b.textContent = "Scanning…";
+      getGeo().then(function(loc){
+        cp.lastScan = nowIso(); cp.lastScanBy = session.callsign;
+        logActivity("CHECKPOINT", session.callsign, "Tour scan — "+cp.name+" at "+pid+" by "+session.callsign+(loc?"":" (location unavailable)"));
+        persist(function(){ return DB.checkpoints.scan(cid, pid, session.callsign, loc); }, "checkpoint scan");
+        if(!loc) toast("Scan logged — couldn't get this device's location.");
+      });
     });
   });
 }
@@ -1225,6 +1270,86 @@ function wireUsers(){
       persist();
     });
   });
+}
+
+/* ---------------- LIVE MAP (Dispatch / Supervisors / Admins only) ----------------
+   Plots each guard's most recent GPS ping (STATE.guardLocations, refreshed automatically —
+   see startLiveTracking in app.js) on a free Leaflet + OpenStreetMap map, no API key or billing
+   account required. "Show trail" overlays that guard's checkpoint-scan history for today from
+   STATE.checkpointScans. Gated to role SUPV in two places: the sidebar (renderShell) hides the
+   nav item for guards, and this function itself refuses to render for anyone else — the same
+   belt-and-suspenders pattern already used for the other SUPV-only actions in this file. Like
+   every other table in this app, the underlying data is still reachable by anyone with the
+   Supabase anon key (see the SECURITY NOTE in schema.sql) — this is a UI-level restriction,
+   not a database-level one. */
+var RIDGECREST_CENTER = [35.6225, -117.6709]; // Ridgecrest, CA — default view before any pings arrive
+var _liveMapView = null; // remembers pan/zoom across re-renders (the view's DOM, and the map with it, is rebuilt on every render() call)
+function renderMap(){
+  if(!session || session.role!=="SUPV"){
+    return '<div class="card"><div class="empty-state">This view is limited to Dispatch, Supervisors, and Admins.</div></div>';
+  }
+  var locs = STATE.guardLocations||[];
+  var trailCs = uiState.mapTrailFor||"";
+  var html = '<div class="section-head"><h2>Live Guard Map</h2><span class="meta">'+locs.length+' reporting</span></div>';
+  html += '<div class="two-col">';
+  html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">On the Map</div>';
+  if(!locs.length){
+    html += '<div class="empty-state">No live positions yet. A pin appears here automatically once a guard\'s device shares its location while they\'re signed in.</div>';
+  } else {
+    html += locs.slice().sort(function(a,b){ return new Date(b.updatedAt)-new Date(a.updatedAt); }).map(function(l){
+      var stale = (Date.now()-new Date(l.updatedAt).getTime()) > 5*60000;
+      return '<div class="checkbox-row" style="justify-content:space-between;">'+
+        '<div><div>'+escapeHtml(l.callsign)+'</div><div class="small-muted">updated '+fmtAgo(l.updatedAt)+(stale?' <span class="overdue-badge">STALE</span>':'')+'</div></div>'+
+        '<button class="btn sm '+(trailCs===l.callsign?"primary":"")+'" data-map-trail="'+escapeHtml(l.callsign)+'">'+(trailCs===l.callsign?"Hide trail":"Show trail")+'</button></div>';
+    }).join("");
+  }
+  html += '<div class="small-muted" style="margin-top:12px;">Positions refresh roughly every 45 seconds while a guard is signed in on their device. "Show trail" overlays today\'s checkpoint-scan path for that guard.</div>';
+  html += '</div>';
+  html += '<div class="card" style="padding:0;overflow:hidden;"><div id="liveMap" style="height:640px;width:100%;"></div></div>';
+  html += '</div>';
+  return html;
+}
+function wireMap(){
+  if(!session || session.role!=="SUPV") return;
+  document.querySelectorAll("[data-map-trail]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var cs = b.getAttribute("data-map-trail");
+      uiState.mapTrailFor = (uiState.mapTrailFor===cs) ? "" : cs;
+      render();
+    });
+  });
+  var el = document.getElementById("liveMap");
+  if(!el || typeof L==="undefined") return;
+  var map = L.map("liveMap");
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+  var pts = [];
+  (STATE.guardLocations||[]).forEach(function(l){
+    if(l.lat==null || l.lng==null) return;
+    var stale = (Date.now()-new Date(l.updatedAt).getTime()) > 5*60000;
+    var marker = L.circleMarker([l.lat,l.lng], {radius:8, color: stale?"#8a8f98":"#3fa9f5", fillColor: stale?"#8a8f98":"#3fa9f5", fillOpacity:.85, weight:2});
+    marker.bindPopup("<b>"+escapeHtml(l.callsign)+"</b><br>Updated "+fmtAgo(l.updatedAt)+(l.accuracy?"<br>±"+Math.round(l.accuracy)+"m":""));
+    marker.addTo(map);
+    pts.push([l.lat,l.lng]);
+  });
+  if(uiState.mapTrailFor){
+    var todayPrefix = new Date().toISOString().slice(0,10);
+    var trail = (STATE.checkpointScans||[]).filter(function(s){
+      return s.callsign===uiState.mapTrailFor && s.lat!=null && s.lng!=null && (s.at||"").slice(0,10)===todayPrefix;
+    }).slice().sort(function(a,b){ return new Date(a.at)-new Date(b.at); });
+    if(trail.length){
+      L.polyline(trail.map(function(s){ return [s.lat,s.lng]; }), {color:"#f5a83f", weight:3, opacity:.8, dashArray:"4,5"}).addTo(map);
+      trail.forEach(function(s){ pts.push([s.lat,s.lng]); });
+      var last = trail[trail.length-1];
+      L.circleMarker([last.lat,last.lng], {radius:5, color:"#f5a83f", fillColor:"#f5a83f", fillOpacity:1}).addTo(map)
+        .bindPopup("Last scan — "+escapeHtml(uiState.mapTrailFor)+"<br>"+fmtShort(last.at));
+    }
+  }
+  if(_liveMapView){ map.setView(_liveMapView.center, _liveMapView.zoom); }
+  else if(pts.length){ map.fitBounds(pts, {padding:[30,30], maxZoom:16}); }
+  else { map.setView(RIDGECREST_CENTER, 12); }
+  map.on("moveend", function(){ _liveMapView = {center: map.getCenter(), zoom: map.getZoom()}; });
 }
 
 document.addEventListener("DOMContentLoaded", init);
