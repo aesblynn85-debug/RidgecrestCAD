@@ -286,7 +286,7 @@ function wireLogin(){
       return;
     }
     uiState.loginErr="";
-    session = {callsign:u.callsign, name:u.name, role:u.role};
+    session = {callsign:u.callsign, name:u.name, role:u.role, assignedPostId:u.assignedPostId||""};
     sessionStorage.setItem("cad_session", JSON.stringify(session));
     u.lastSignIn = nowIso();
     logActivity("AUTH", u.callsign, u.name+" ("+u.callsign+") signed in");
@@ -412,6 +412,16 @@ async function init(){
     realtimeTimer = setTimeout(function(){
       DB.loadAllState().then(function(fresh){
         STATE = fresh; window.__CAD.STATE = STATE;
+        // Pick up role/map-access changes made to this account from elsewhere (e.g. a dispatcher
+        // changing this supervisor's assigned site) without requiring a fresh sign-in.
+        if(session){
+          var me = STATE.users.find(function(u){ return u.callsign===session.callsign; });
+          if(me){
+            var changed = session.role!==me.role || session.name!==me.name || session.assignedPostId!==(me.assignedPostId||"");
+            session.role = me.role; session.name = me.name; session.assignedPostId = me.assignedPostId||"";
+            if(changed) sessionStorage.setItem("cad_session", JSON.stringify(session));
+          }
+        }
         var active = document.activeElement, tag = active && active.tagName;
         if(tag==="INPUT" || tag==="TEXTAREA" || tag==="SELECT") return; // apply silently; next render will pick it up
         render();
@@ -1220,12 +1230,27 @@ function renderUsers(){
   var html = '<div class="card"><div class="section-head"><h2>User Accounts</h2><span class="meta">'+active+' active / '+STATE.users.length+' total</span>'+
     (session.role==="SUPV"? '<button class="btn sm primary" data-action="addUser">+ Add account</button>' : '')+
     '</div>'+
-    '<div class="small-muted" style="margin-bottom:14px;">Every account signs in with a callsign and a PIN. Guards can read the board and report — post to Patrol Chat, scan checkpoints, log trucks and attach photos. Supervisors add the roster, post directory, these accounts and the data reset.</div>';
+    '<div class="small-muted" style="margin-bottom:14px;">Every account signs in with a callsign and a PIN. Guards can read the board and report — post to Patrol Chat, scan checkpoints, log trucks and attach photos. Supervisors add the roster, post directory, these accounts and the data reset. A supervisor account\'s <b>Map access</b> controls what it sees on the Live Map: a specific site limits it to that site\'s guards (Supervisor); All Sites shows everyone (Dispatch/Admin).</div>';
   html += STATE.users.map(function(u){
+    var mapAccess = "";
+    if(u.role==="SUPV"){
+      var current = u.assignedPostId||"";
+      var currentPost = current ? STATE.posts.find(function(p){return p.id===current;}) : null;
+      var currentLabel = current ? (currentPost ? currentPost.id+" — "+currentPost.name : current) : "All Sites (Dispatch/Admin)";
+      mapAccess = session.role==="SUPV" ?
+        ('<div style="margin-top:6px;"><span class="small-muted" style="margin-right:6px;">Map access</span>'+
+          '<select class="mapAccessSel" data-user="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:12px;padding:4px 6px;">'+
+            '<option value="">All Sites (Dispatch/Admin)</option>'+
+            STATE.posts.map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(current===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
+          '</select></div>')
+        : ('<div class="small-muted" style="margin-top:4px;">Map access: '+escapeHtml(currentLabel)+'</div>');
+    }
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid hsl(var(--border)/.6);">'+
       '<div><div style="font-weight:700;">'+escapeHtml(u.callsign)+' <span class="pill blue">'+u.role+'</span>'+(u.callsign===session.callsign?' <span class="pill ok">YOU</span>':'')+'</div>'+
       '<div class="small-muted">'+escapeHtml(u.name)+' — '+escapeHtml(u.title)+'</div>'+
-      '<div class="small-muted">Last sign-in: '+(u.lastSignIn?fmtShort(u.lastSignIn):"never")+'</div></div>'+
+      '<div class="small-muted">Last sign-in: '+(u.lastSignIn?fmtShort(u.lastSignIn):"never")+'</div>'+
+      mapAccess+
+      '</div>'+
       (session.role==="SUPV"? '<div style="display:flex;gap:6px;"><button class="btn sm" data-reset-pin="'+escapeHtml(u.callsign)+'">Reset PIN</button><button class="btn sm ghost" data-toggle-active="'+escapeHtml(u.callsign)+'">'+(u.active?"Deactivate":"Activate")+'</button></div>' : '')+
     '</div>';
   }).join("");
@@ -1270,6 +1295,23 @@ function wireUsers(){
       persist();
     });
   });
+  document.querySelectorAll(".mapAccessSel").forEach(function(sel){
+    sel.addEventListener("change", async function(){
+      var cs = sel.getAttribute("data-user"); var postId = sel.value;
+      var u = STATE.users.find(function(x){return x.callsign===cs;});
+      if(DB.configured){
+        try{ await DB.auth.setAssignedPost(cs, postId); }
+        catch(e){ toast("Couldn't update map access: "+(e.message||e)); return; }
+      }
+      var post = postId ? STATE.posts.find(function(p){return p.id===postId;}) : null;
+      var label = postId ? (post ? post.id+" — "+post.name : postId) : "All Sites";
+      u.assignedPostId = postId;
+      logActivity("AUTH", session.callsign, session.name+" set map access for "+cs+" to "+label);
+      // If this is the signed-in account, apply the new scope to this browser's session right away.
+      if(session.callsign===cs){ session.assignedPostId = postId; sessionStorage.setItem("cad_session", JSON.stringify(session)); }
+      persist();
+    });
+  });
 }
 
 /* ---------------- LIVE MAP (Dispatch / Supervisors / Admins only) ----------------
@@ -1281,20 +1323,44 @@ function wireUsers(){
    belt-and-suspenders pattern already used for the other SUPV-only actions in this file. Like
    every other table in this app, the underlying data is still reachable by anyone with the
    Supabase anon key (see the SECURITY NOTE in schema.sql) — this is a UI-level restriction,
-   not a database-level one. */
+   not a database-level one.
+
+   Within that SUPV gate, each account is further scoped by session.assignedPostId (set per
+   account from the Users tab's "Map access" control, src/part3.js renderUsers/wireUsers): a
+   Supervisor assigned to a site only sees that site's guards, matched against which post each
+   guard's unit is currently posted to (units[].post). Left unassigned — the default — an
+   account sees every site, i.e. Dispatch/Admin. */
 var RIDGECREST_CENTER = [35.6225, -117.6709]; // Ridgecrest, CA — default view before any pings arrive
 var _liveMapView = null; // remembers pan/zoom across re-renders (the view's DOM, and the map with it, is rebuilt on every render() call)
+function mapScopePostId(){ return (session && session.assignedPostId) || ""; }
+function mapScopeLabel(postId){
+  if(!postId) return "All Sites";
+  var post = STATE.posts.find(function(p){return p.id===postId;});
+  return post ? post.id+" — "+post.name : postId;
+}
+/* Guards currently posted (units[].post) to the scoped site; unscoped (Dispatch/Admin) returns everyone. */
+function scopedGuardLocations(){
+  var locs = STATE.guardLocations||[];
+  var postId = mapScopePostId();
+  if(!postId) return locs;
+  var atSite = {};
+  STATE.units.forEach(function(u){ if(u.post===postId) atSite[u.callsign]=1; });
+  return locs.filter(function(l){ return atSite[l.callsign]; });
+}
 function renderMap(){
   if(!session || session.role!=="SUPV"){
     return '<div class="card"><div class="empty-state">This view is limited to Dispatch, Supervisors, and Admins.</div></div>';
   }
-  var locs = STATE.guardLocations||[];
+  var postId = mapScopePostId();
+  var scopeLabel = mapScopeLabel(postId);
+  var locs = scopedGuardLocations();
   var trailCs = uiState.mapTrailFor||"";
-  var html = '<div class="section-head"><h2>Live Guard Map</h2><span class="meta">'+locs.length+' reporting</span></div>';
+  var html = '<div class="section-head"><h2>Live Guard Map</h2><span class="meta">'+locs.length+' reporting · '+escapeHtml(scopeLabel)+'</span></div>';
   html += '<div class="two-col">';
-  html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">On the Map</div>';
+  html += '<div class="card"><div style="font-weight:700;">On the Map</div>'+
+    '<div class="small-muted" style="margin-bottom:10px;">'+(postId ? 'Scoped to '+escapeHtml(scopeLabel)+' — set from the Users tab.' : 'All sites — Dispatch/Admin view.')+'</div>';
   if(!locs.length){
-    html += '<div class="empty-state">No live positions yet. A pin appears here automatically once a guard\'s device shares its location while they\'re signed in.</div>';
+    html += '<div class="empty-state">'+(postId ? 'No live positions yet at '+escapeHtml(scopeLabel)+'.' : 'No live positions yet.')+' A pin appears here automatically once a guard\'s device shares its location while they\'re signed in.</div>';
   } else {
     html += locs.slice().sort(function(a,b){ return new Date(b.updatedAt)-new Date(a.updatedAt); }).map(function(l){
       var stale = (Date.now()-new Date(l.updatedAt).getTime()) > 5*60000;
@@ -1325,7 +1391,7 @@ function wireMap(){
     maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(map);
   var pts = [];
-  (STATE.guardLocations||[]).forEach(function(l){
+  scopedGuardLocations().forEach(function(l){
     if(l.lat==null || l.lng==null) return;
     var stale = (Date.now()-new Date(l.updatedAt).getTime()) > 5*60000;
     var marker = L.circleMarker([l.lat,l.lng], {radius:8, color: stale?"#8a8f98":"#3fa9f5", fillColor: stale?"#8a8f98":"#3fa9f5", fillOpacity:.85, weight:2});
