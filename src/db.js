@@ -86,6 +86,41 @@ function pvToRow(v){
 }
 function activityFromRow(r){ return {at:r.at, type:r.type, actor:r.actor, text:r.text}; }
 
+/* ---------- patrol tours: a site (post) can have many tours, each an ordered list of scan
+   points a supervisor builds live by walking the route (see src/part3.js wireTours). ---------- */
+function tourFromRow(r){
+  return {id:r.id, postId:r.post_id, name:r.name, createdBy:r.created_by||"", createdAt:r.created_at, active:!!r.active};
+}
+function tourToRow(t){
+  return {id:t.id, post_id:t.postId, name:t.name, created_by:t.createdBy||"", active: t.active!==false};
+}
+function tourPointFromRow(r){
+  return {id:r.id, tourId:r.tour_id, seq:r.seq, name:r.name||"", lat:r.lat, lng:r.lng,
+    radiusFt:r.radius_ft, createdBy:r.created_by||"", createdAt:r.created_at};
+}
+function tourPointToRow(p){
+  return {id:p.id, tour_id:p.tourId, seq:p.seq||0, name:p.name||"", lat:p.lat, lng:p.lng,
+    radius_ft:p.radiusFt||25, created_by:p.createdBy||""};
+}
+function tourAssignmentFromRow(r){
+  return {id:r.id, tourId:r.tour_id, guardCallsign:r.guard_callsign, shiftDate:r.shift_date,
+    assignedBy:r.assigned_by||"", assignedAt:r.assigned_at};
+}
+function tourAssignmentToRow(a){
+  return {id:a.id, tour_id:a.tourId, guard_callsign:a.guardCallsign, shift_date:a.shiftDate, assigned_by:a.assignedBy||""};
+}
+/* lat/lng/accuracy here is the GUARD's own device location at scan time — kept for reference
+   only. It is never compared against the point's radiusFt; the user chose "informational only"
+   over enforcement, so a scan always succeeds regardless of where the guard actually is. */
+function tourScanFromRow(r){
+  return {id:r.id, tourPointId:r.tour_point_id, tourId:r.tour_id, callsign:r.callsign, at:r.at,
+    lat:r.lat, lng:r.lng, accuracy:r.accuracy_m};
+}
+function tourScanToRow(s){
+  return {id:s.id, tour_point_id:s.tourPointId, tour_id:s.tourId, callsign:s.callsign, at:s.at,
+    lat:s.lat, lng:s.lng, accuracy_m:s.accuracy};
+}
+
 /* ---------- load everything into the STATE shape the UI expects ---------- */
 async function loadAllState(){
   must();
@@ -105,13 +140,18 @@ async function loadAllState(){
     sb.from("activity_log").select("*").order("at",{ascending:false}).limit(500),
     sb.from("counters").select("*"),
     sb.from("checkpoint_scans").select("*").order("at",{ascending:false}).limit(2000),
-    sb.from("guard_locations").select("*")
+    sb.from("guard_locations").select("*"),
+    sb.from("patrol_tours").select("*"),
+    sb.from("patrol_tour_points").select("*").order("seq",{ascending:true}),
+    sb.from("tour_assignments").select("*"),
+    sb.from("tour_point_scans").select("*").order("at",{ascending:false}).limit(2000)
   ]);
   results.forEach(chk);
   var users = results[0].data, units = results[1].data, posts = results[2].data, checkpoints = results[3].data,
     calls = results[4].data, supplements = results[5].data, channels = results[6].data, messages = results[7].data,
     trucks = results[8].data, reports = results[9].data, pvs = results[10].data, police = results[11].data,
-    activity = results[12].data, counters = results[13].data, scans = results[14].data, liveLocs = results[15].data;
+    activity = results[12].data, counters = results[13].data, scans = results[14].data, liveLocs = results[15].data,
+    tours = results[16].data, tourPoints = results[17].data, tourAssignments = results[18].data, tourScans = results[19].data;
 
   var callsOut = calls.map(callFromRow);
   supplements.forEach(function(s){
@@ -151,7 +191,14 @@ async function loadAllState(){
     // Each guard's most recent live GPS ping (one row per callsign — see guard_locations in
     // schema.sql). Feeds the Live Map tab; checkpointScans above supplies the movement trail.
     guardLocations: liveLocs.map(function(g){ return {callsign:g.callsign, lat:g.lat, lng:g.lng,
-      accuracy:g.accuracy_m, updatedAt:g.updated_at}; })
+      accuracy:g.accuracy_m, updatedAt:g.updated_at}; }),
+    // Sites and Patrol Tours are separate: patrolTours/tourPoints are the live-built routes
+    // (src/part3.js renderTours), tourAssignments is the many-to-many guard<->tour link for a
+    // shift date, tourPointScans is the guard's scan history (informational GPS, never enforced).
+    patrolTours: tours.map(tourFromRow),
+    tourPoints: tourPoints.map(tourPointFromRow),
+    tourAssignments: tourAssignments.map(tourAssignmentFromRow),
+    tourPointScans: tourScans.map(tourScanFromRow)
   };
 }
 
@@ -227,11 +274,26 @@ var DB = {
   activity: {
     insert: function(entry){ return insertRow("activity_log", {at:entry.at, type:entry.type, actor:entry.actor, text:entry.text}); }
   },
+  /* Sites vs. Patrol Tours: a site (post) can have any number of tours. A supervisor builds a
+     tour live (create, then addPoint per GPS tap while walking); assign/unassign links a guard
+     to a tour for one shift date (many-to-many — a guard can hold several at once); scanPoint
+     records a guard's own GPS at scan time for reference only, never validated against radiusFt. */
+  tours: {
+    create: function(t){ return insertRow("patrol_tours", tourToRow(t)); },
+    setActive: function(id, active){ return updateRow("patrol_tours","id",id,{active:!!active}); },
+    remove: function(id){ return deleteRow("patrol_tours","id",id); },
+    addPoint: function(p){ return insertRow("patrol_tour_points", tourPointToRow(p)); },
+    removePoint: function(id){ return deleteRow("patrol_tour_points","id",id); },
+    assign: function(a){ return insertRow("tour_assignments", tourAssignmentToRow(a)); },
+    unassign: function(id){ return deleteRow("tour_assignments","id",id); },
+    scanPoint: function(s){ return insertRow("tour_point_scans", tourScanToRow(s)); }
+  },
   /* Subscribe to live changes from other guards' sessions. onChange is called with the
      table name whenever a row changes; callers typically refetch that slice and re-render. */
   subscribeRealtime: function(onChange){
     if(!sb) return null;
-    var tables = ["units","calls","call_supplements","chat_messages","trucks","reports","parking_violations","checkpoints","activity_log","checkpoint_scans","guard_locations"];
+    var tables = ["units","calls","call_supplements","chat_messages","trucks","reports","parking_violations","checkpoints","activity_log","checkpoint_scans","guard_locations",
+      "patrol_tours","patrol_tour_points","tour_assignments","tour_point_scans"];
     var channel = sb.channel("cad-live");
     tables.forEach(function(t){
       channel.on("postgres_changes", {event:"*", schema:"public", table:t}, function(payload){ onChange(t, payload); });
