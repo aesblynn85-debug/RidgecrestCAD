@@ -6,7 +6,8 @@
 var NAV = [
   {id:"dispatch", label:"Dispatch", ic:"◉"},
   {id:"units", label:"Units", ic:"▤"},
-  {id:"sites", label:"Posts & Tours", ic:"◇"},
+  {id:"sites", label:"Sites", ic:"◇"},
+  {id:"tours", label:"Patrol Tours", ic:"⚑"},
   {id:"chat", label:"Patrol Chat", ic:"✇"},
   {id:"radio", label:"Radio PTT", ic:"▶"},
   {id:"trucks", label:"Truck Log", ic:"▢"},
@@ -232,6 +233,7 @@ function renderView(){
   switch(route){
     case "units": return renderUnits();
     case "sites": return renderSites();
+    case "tours": return renderTours();
     case "chat": return renderChat();
     case "radio": return renderRadio();
     case "trucks": return renderTrucks();
@@ -319,6 +321,7 @@ function wireView(){
   if(route==="dispatch") wireDispatch();
   if(route==="units") wireUnits();
   if(route==="sites") wireSites();
+  if(route==="tours") wireTours();
   if(route==="chat") wireChat();
   if(route==="trucks") wireTrucks();
   if(route==="parking") wireParking();
