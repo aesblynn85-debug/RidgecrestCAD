@@ -230,33 +230,31 @@ function wireUnits(){
   });
 }
 
-/* ---------------- POSTS & TOURS ---------------- */
+/* ---------------- SITES ---------------- */
+// Sites are the security posts/locations themselves. Patrol Tours — the walkable, ordered
+// routes of scan points a supervisor builds live and assigns to guards — are a separate concept
+// with their own nav tab (renderTours/wireTours in part3.js); one site can have many tours. This
+// view is just the site directory now; the old per-checkpoint scan UI moved to Patrol Tours.
 function renderSites(){
-  var totalCp = STATE.posts.reduce(function(s,p){return s+p.checkpoints.length;},0);
-  var overdueCount = 0;
-  var html = '<div class="card"><div class="section-head"><h2>Post Directory &amp; Patrol Tours</h2><span class="meta">'+STATE.posts.length+' posts · '+totalCp+' checkpoints</span></div>';
-  STATE.posts.forEach(function(p){
-    html += '<div style="margin-bottom:18px;"><div style="display:flex;justify-content:space-between;align-items:baseline;"><div><b>'+escapeHtml(p.id)+'</b> — '+escapeHtml(p.name)+' <span class="pill blue">'+escapeHtml(p.kind)+'</span></div></div>'+
-      '<div class="small-muted">'+escapeHtml(p.org)+' · '+escapeHtml(p.address)+'</div>'+
-      '<div class="small-muted" style="margin:8px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Patrol Checkpoints</div>';
-    p.checkpoints.forEach(function(cp){
-      var overdue = false;
-      if(cp.lastScan){
-        var mins=(Date.now()-new Date(cp.lastScan).getTime())/60000;
-        overdue = mins > cp.intervalMin;
-      } else overdue = true;
-      if(overdue) overdueCount++;
-      html += '<div class="checkbox-row" style="justify-content:space-between;">'+
-        '<div><div>'+escapeHtml(cp.name)+'</div><div class="small-muted">every '+cp.intervalMin+'m · '+(cp.lastScan? "last "+fmtShort(cp.lastScan)+" by "+escapeHtml(cp.lastScanBy) : "never scanned")+(overdue?' <span class="overdue-badge">OVERDUE</span>':'')+'</div></div>'+
-        '<button class="btn sm" data-scan-post="'+p.id+'" data-scan-cp="'+cp.id+'">Scan</button></div>';
-    });
-    html += '</div>';
-  });
+  var html = '<div class="card"><div class="section-head"><h2>Site Directory</h2><span class="meta">'+STATE.posts.length+' sites</span></div>';
+  if(!STATE.posts.length){
+    html += '<div class="empty-state">No sites yet.</div>';
+  } else {
+    html += STATE.posts.map(function(p){
+      var tourCount = (STATE.patrolTours||[]).filter(function(t){return t.postId===p.id && t.active;}).length;
+      return '<div class="list-item">'+
+        '<div class="top"><span><b>'+escapeHtml(p.id)+'</b> — '+escapeHtml(p.name)+'</span><span class="pill blue">'+escapeHtml(p.kind)+'</span></div>'+
+        '<div class="meta">'+escapeHtml(p.org)+' · '+escapeHtml(p.address||"No address on file")+'</div>'+
+        '<div class="small-muted" style="margin-top:4px;">'+tourCount+' active patrol tour'+(tourCount===1?"":"s")+' — see Patrol Tours</div>'+
+      '</div>';
+    }).join("");
+  }
   html += '</div>';
   return html;
 }
 /* Reads the device's current GPS position. Never rejects — resolves null on denial/timeout/no
-   support — so a scan is never blocked by a guard's location settings. */
+   support — so a scan (or, in Patrol Tours, capturing a new point) is never blocked by a
+   guard's or supervisor's location settings. */
 function getGeo(){
   return new Promise(function(resolve){
     if(!navigator.geolocation){ resolve(null); return; }
@@ -269,19 +267,7 @@ function getGeo(){
 }
 
 function wireSites(){
-  document.querySelectorAll("[data-scan-cp]").forEach(function(b){
-    b.addEventListener("click", function(){
-      var pid=b.getAttribute("data-scan-post"), cid=b.getAttribute("data-scan-cp");
-      var p=STATE.posts.find(function(x){return x.id===pid;}); var cp=p.checkpoints.find(function(x){return x.id===cid;});
-      b.disabled = true; var origText = b.textContent; b.textContent = "Scanning…";
-      getGeo().then(function(loc){
-        cp.lastScan = nowIso(); cp.lastScanBy = session.callsign;
-        logActivity("CHECKPOINT", session.callsign, "Tour scan — "+cp.name+" at "+pid+" by "+session.callsign+(loc?"":" (location unavailable)"));
-        persist(function(){ return DB.checkpoints.scan(cid, pid, session.callsign, loc); }, "checkpoint scan");
-        if(!loc) toast("Scan logged — couldn't get this device's location.");
-      });
-    });
-  });
+  // Plain directory — nothing to wire yet.
 }
 
 /* ---------------- PATROL CHAT ---------------- */
