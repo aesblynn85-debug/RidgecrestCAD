@@ -105,6 +105,66 @@ create table if not exists guard_locations (
   updated_at timestamptz not null default now()
 );
 
+-- ---------- patrol tours ----------
+-- Sites and Patrol Tours are separate: a post (site) can have any number of Tours, each an
+-- ordered route of scan points. Unlike the old checkpoints table above (kept for backward
+-- compatibility but no longer used by the app UI — see src/part2.js renderSites), a tour's
+-- points are NOT pre-defined with a name/interval. A supervisor builds a tour live: while
+-- walking the route, each "Add scan point" tap (src/part3.js wireTours) captures the
+-- supervisor's own device GPS at that moment and stores it as the point's fixed location.
+create table if not exists patrol_tours (
+  id text primary key,
+  post_id text not null references posts(id) on delete cascade,
+  name text not null,
+  created_by text,
+  created_at timestamptz not null default now(),
+  active boolean not null default true
+);
+
+-- radius_ft is informational only (shown to the guard as "roughly here"); it is never checked
+-- against the guard's device location at scan time — see tour_point_scans below.
+create table if not exists patrol_tour_points (
+  id text primary key,
+  tour_id text not null references patrol_tours(id) on delete cascade,
+  seq int not null default 0,
+  name text not null default '',
+  lat double precision not null,
+  lng double precision not null,
+  radius_ft int not null default 25,
+  created_by text,
+  created_at timestamptz not null default now()
+);
+create index if not exists patrol_tour_points_tour_id_idx on patrol_tour_points(tour_id);
+
+-- A supervisor assigns one or more tours to a guard for a shift date; a guard can hold several
+-- active assignments at once (src/part3.js renderTours "My Tours" for the signed-in guard).
+create table if not exists tour_assignments (
+  id text primary key,
+  tour_id text not null references patrol_tours(id) on delete cascade,
+  guard_callsign text not null references users(callsign) on delete cascade,
+  shift_date date not null default current_date,
+  assigned_by text,
+  assigned_at timestamptz not null default now()
+);
+create index if not exists tour_assignments_guard_idx on tour_assignments(guard_callsign, shift_date);
+
+-- A guard's scan of one tour point. No interval/overdue timer (unlike checkpoints above) —
+-- tours are walked start to finish, not on a recurring clock. lat/lng/accuracy is the guard's
+-- own device location at scan time, kept for reference/audit only; it is never validated
+-- against the point's radius_ft (see the "Scan enforcement" note in part3.js renderTours).
+create table if not exists tour_point_scans (
+  id text primary key,
+  tour_point_id text not null references patrol_tour_points(id) on delete cascade,
+  tour_id text not null references patrol_tours(id) on delete cascade,
+  callsign text not null,
+  at timestamptz not null default now(),
+  lat double precision,
+  lng double precision,
+  accuracy_m double precision
+);
+create index if not exists tour_point_scans_point_idx on tour_point_scans(tour_point_id);
+create index if not exists tour_point_scans_callsign_idx on tour_point_scans(callsign, at desc);
+
 -- ---------- dispatch calls ----------
 create table if not exists calls (
   id text primary key,
@@ -283,13 +343,18 @@ alter table parking_violations enable row level security;
 alter table police_on_property enable row level security;
 alter table activity_log enable row level security;
 alter table counters enable row level security;
+alter table patrol_tours enable row level security;
+alter table patrol_tour_points enable row level security;
+alter table tour_assignments enable row level security;
+alter table tour_point_scans enable row level security;
 
 do $$
 declare t text;
 begin
   for t in select unnest(array['users','units','posts','checkpoints','checkpoint_scans','guard_locations','calls','call_supplements',
     'chat_channels','chat_messages','trucks','reports','parking_violations',
-    'police_on_property','activity_log','counters'])
+    'police_on_property','activity_log','counters',
+    'patrol_tours','patrol_tour_points','tour_assignments','tour_point_scans'])
   loop
     execute format('drop policy if exists anon_all on %I;', t);
     execute format('create policy anon_all on %I for all to anon, authenticated using (true) with check (true);', t);
@@ -376,7 +441,8 @@ do $$
 declare t text;
 begin
   for t in select unnest(array['units','calls','call_supplements','chat_messages','trucks',
-    'reports','parking_violations','checkpoints','checkpoint_scans','guard_locations','activity_log'])
+    'reports','parking_violations','checkpoints','checkpoint_scans','guard_locations','activity_log',
+    'patrol_tours','patrol_tour_points','tour_assignments','tour_point_scans'])
   loop
     if not exists (
       select 1 from pg_publication_tables
