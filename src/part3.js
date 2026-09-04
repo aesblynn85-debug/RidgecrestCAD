@@ -524,8 +524,9 @@ function wireLog(){
 
 /* ---------------- USERS ---------------- */
 function renderUsers(){
+  var pinCard = '<div class="card" style="margin-bottom:16px;"><div class="section-head"><h2>Change My PIN</h2></div>'+'<div class="small-muted" style="margin-bottom:10px;">Update the PIN for your own account ('+escapeHtml(session.callsign)+'). This does not affect any other account.</div>'+'<div class="grid2"><label class="field"><span class="lbl">Current PIN</span><input id="pinCurrent" type="password" maxlength="6" inputmode="numeric" placeholder="pin"></label>'+'<label class="field"><span class="lbl">New PIN</span><input id="pinNew" type="password" maxlength="6" inputmode="numeric" placeholder="pin"></label></div>'+'<label class="field"><span class="lbl">Confirm New PIN</span><input id="pinConfirm" type="password" maxlength="6" inputmode="numeric" placeholder="pin"></label>'+'<button class="btn primary" data-action="changeMyPin" style="margin-top:6px;">Update PIN</button>'+'</div>';
   var active = STATE.users.filter(function(u){return u.active;}).length;
-  var html = '<div class="card"><div class="section-head"><h2>User Accounts</h2><span class="meta">'+active+' active / '+STATE.users.length+' total</span>'+
+  var html = pinCard + '<div class="card"><div class="section-head"><h2>User Accounts</h2><span class="meta">'+active+' active / '+STATE.users.length+' total</span>'+
     (session.role==="SUPV"? '<button class="btn sm primary" data-action="addUser">+ Add account</button>' : '')+
     '</div>'+
     '<div class="small-muted" style="margin-bottom:14px;">Every account signs in with a callsign and a PIN. Guards can read the board and report — post to Patrol Chat, scan checkpoints, log trucks and attach photos. Supervisors add the roster, post directory, these accounts and the data reset. A supervisor account\'s <b>Map access</b> controls what it sees on the Live Map: a specific site limits it to that site\'s guards (Supervisor); All Sites shows everyone (Dispatch/Admin).</div>';
@@ -556,6 +557,7 @@ function renderUsers(){
   return html;
 }
 function wireUsers(){
+  var pinBtn = document.querySelector('[data-action="changeMyPin"]'); if(pinBtn) pinBtn.addEventListener("click", async function(){ var cur = (document.getElementById("pinCurrent")||{}).value||""; var next = (document.getElementById("pinNew")||{}).value||""; var conf = (document.getElementById("pinConfirm")||{}).value||""; cur=cur.trim(); next=next.trim(); conf=conf.trim(); if(!cur || !next || !conf){ toast("Fill in all three PIN fields."); return; } if(next.length<4){ toast("New PIN must be at least 4 digits."); return; } if(next!==conf){ toast("New PIN and confirmation do not match."); return; } pinBtn.disabled = true; try{ var ok = DB.configured ? await DB.auth.verifyPin(session.callsign, cur) : cur==="1234"; if(!ok){ toast("Current PIN is incorrect."); pinBtn.disabled=false; return; } if(DB.configured) await DB.auth.setPin(session.callsign, next); var me = STATE.users.find(function(x){return x.callsign===session.callsign;}); if(me) me.mustChangePin = false; logActivity("AUTH", session.callsign, session.name+" changed their own PIN"); toast("PIN updated."); persist(); }catch(e){ toast("Couldn't update PIN: "+(e.message||e)); pinBtn.disabled=false; } });
   var addBtn = document.querySelector('[data-action="addUser"]');
   if(addBtn) addBtn.addEventListener("click", async function(){
     var cs = prompt("New callsign (e.g. ST5-61)"); if(!cs) return;
