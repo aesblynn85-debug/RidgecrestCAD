@@ -13,6 +13,7 @@ var NAV = [
   {id:"trucks", label:"Truck Log", ic:"▢"},
   {id:"parking", label:"Parking Lot Violations", ic:"⚠"},
   {id:"reports", label:"Field Reports", ic:"☷"},
+  {id:"guardnotes", label:"Guard Notes", ic:"✎"},
   {id:"log", label:"Activity Log", ic:"≡"},
   {id:"users", label:"Users", ic:"☺"},
   // Dispatch/Supervisor/Admin only — filtered out of the sidebar for guards in renderShell,
@@ -239,6 +240,7 @@ function renderView(){
     case "trucks": return renderTrucks();
     case "parking": return renderParking();
     case "reports": return renderReports();
+    case "guardnotes": return renderGuardNotes();
     case "log": return renderLog();
     case "users": return renderUsers();
     case "map": return renderMap();
@@ -326,6 +328,7 @@ function wireView(){
   if(route==="trucks") wireTrucks();
   if(route==="parking") wireParking();
   if(route==="reports") wireReports();
+  if(route==="guardnotes") wireGuardNotes();
   if(route==="log") wireLog();
   if(route==="users") wireUsers();
   if(route==="map") wireMap();
@@ -373,6 +376,10 @@ function checkLocalBackup(){
       (restored.reports||[]).forEach(function(r){ if(!haveR[r.id]){ STATE.reports.unshift(r); queueWrite(function(){return DB.reports.insert(r);}, "report "+r.id); } });
       var haveT = {}; STATE.trucks.forEach(function(t){haveT[t.id]=1;});
       (restored.trucks||[]).forEach(function(t){ if(!haveT[t.id]){ STATE.trucks.unshift(t); queueWrite(function(){return DB.trucks.insert(t);}, "truck "+t.id); } });
+      var haveP = {}; STATE.policeOnProperty.forEach(function(p){haveP[p.id]=1;});
+      (restored.policeOnProperty||[]).forEach(function(p){ if(!haveP[p.id]){ STATE.policeOnProperty.unshift(p); queueWrite(function(){return DB.police.insert(p);}, "police on property "+p.id); } });
+      var haveN = {}; STATE.guardNotes.forEach(function(n){haveN[n.id]=1;});
+      (restored.guardNotes||[]).forEach(function(n){ if(!haveN[n.id]){ STATE.guardNotes.unshift(n); queueWrite(function(){return DB.guardNotes.insert(n);}, "guard note "+n.id); } });
       var haveMsg = {}; STATE.chat.messages.forEach(function(m){haveMsg[m.channel+"|"+m.at]=1;});
       (restored.chat&&restored.chat.messages||[]).forEach(function(m){ var k=m.channel+"|"+m.at; if(!haveMsg[k]){ STATE.chat.messages.push(m); queueWrite(function(){return DB.chat.addMessage(m);}, "chat message"); } });
     } else {
