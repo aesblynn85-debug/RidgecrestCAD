@@ -21,12 +21,12 @@ function chk(res){ if(res.error) throw res.error; return res.data; }
 function callFromRow(r){
   return {id:r.id, code:r.code||"", nature:r.nature||"", priority:r.priority, post:r.post||"", location:r.location||"",
     reportingParty:r.reporting_party||"", callback:r.callback||"", receivedVia:r.received_via||"", status:r.status,
-    createdAt:r.created_at, assignedUnit:r.assigned_unit||"", narrativeSupplements:[]};
+    createdAt:r.created_at, assignedUnits:r.assigned_units||[], narrativeSupplements:[]};
 }
 function callToRow(c){
   return {id:c.id, code:c.code||"", nature:c.nature||"", priority:c.priority, post:c.post||"", location:c.location||"",
     reporting_party:c.reportingParty||"", callback:c.callback||"", received_via:c.receivedVia||"", status:c.status,
-    created_at:c.createdAt, assigned_unit:c.assignedUnit||""};
+    created_at:c.createdAt, assigned_units:c.assignedUnits||[]};
 }
 function unitFromRow(r){
   return {callsign:r.callsign, name:r.name, type:r.type, status:r.status, statusSince:r.status_since, post:r.post||"",
