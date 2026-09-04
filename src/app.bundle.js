@@ -476,7 +476,7 @@ function renderDispatch(){
       return '<div class="list-item" data-open-call="'+c.id+'">'+
         '<div class="top"><span>#'+c.id+' · P'+c.priority+' '+escapeHtml(c.code||"")+'</span><span>'+fmtShort(c.createdAt)+'</span></div>'+
         '<div class="subj">'+escapeHtml(c.nature||c.code||"")+'</div>'+
-        '<div class="meta">@ '+escapeHtml(c.post||"—")+' · <span class="pill '+(c.status==="DISPATCHED"?"blue":c.status==="ONSCENE"?"ok":"muted")+'">'+c.status+'</span>'+(c.assignedUnit?" · "+escapeHtml(c.assignedUnit):"")+'</div>'+
+        '<div class="meta">@ '+escapeHtml(c.post||"—")+' · <span class="pill '+(c.status==="DISPATCHED"?"blue":c.status==="ENROUTE"?"blue":c.status==="ONSCENE"?"ok":"muted")+'">'+c.status+'</span>'+((c.assignedUnits&&c.assignedUnits.length)?" · "+escapeHtml(c.assignedUnits.join(", ")):"")+'</div>'+
       '</div>';
     }).join("");
   }
@@ -514,6 +514,21 @@ function renderDispatch(){
 function renderCallModal(c){
   var C=window.__CAD;
   var narr = (c.narrativeSupplements||[]).map(function(n){ return '<div style="margin-bottom:6px;"><span class="small-muted">'+fmtShort(n.at)+' '+escapeHtml(n.by)+':</span> '+escapeHtml(n.text)+'</div>'; }).join("") || '<div class="small-muted">No supplements yet.</div>';
+var assigned = c.assignedUnits || [];
+var availUnits = STATE.units.filter(function(u){ return u.status==="AVAILABLE"; });
+var unitsHtml = assigned.length ? assigned.map(function(cs){
+var u = STATE.units.find(function(x){return x.callsign===cs;});
+var st = u ? u.status : "?";
+return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">'+
+'<span>'+escapeHtml(cs)+(u?" — "+escapeHtml(u.name):"")+' <span class="pill '+(st==="ONSCENE"?"ok":(st==="ENROUTE"||st==="DISPATCHED")?"blue":"muted")+'">'+st+'</span></span>'+
+'<button class="btn sm ghost" data-action="unassignUnit" data-call="'+c.id+'" data-unit="'+escapeHtml(cs)+'">Remove</button>'+
+'</div>';
+}).join("") : '<div class="small-muted">No units assigned yet.</div>';
+var pickerHtml = availUnits.length ?
+'<div style="display:flex;gap:6px;margin-top:8px;"><select id="unitPicker" style="flex:1;">'+
+availUnits.map(function(u){ return '<option value="'+escapeHtml(u.callsign)+'">'+escapeHtml(u.callsign+" — "+u.name)+'</option>'; }).join("")+
+'</select><button class="btn sm" data-action="assignUnit" data-call="'+c.id+'">Add unit</button></div>' :
+'<div class="small-muted" style="margin-top:8px;">No available units to assign.</div>';
   return '<div class="modal-backdrop" data-close-modal="1"><div class="modal" onclick="event.stopPropagation()">'+
     '<button class="close" data-action="closeCall">✕</button>'+
     '<div class="rtaid">#'+c.id+'</div><h2>'+escapeHtml(c.nature||c.code||"")+'</h2>'+
@@ -523,13 +538,13 @@ function renderCallModal(c){
       '<div><div class="k">Post</div><div class="v">'+escapeHtml(c.post||"—")+'</div></div>'+
       '<div><div class="k">Location</div><div class="v">'+escapeHtml(c.location||"—")+'</div></div>'+
       '<div><div class="k">Created</div><div class="v">'+fmtDT(c.createdAt)+'</div></div>'+
-      '<div><div class="k">Unit</div><div class="v">'+escapeHtml(c.assignedUnit||"Unassigned")+'</div></div>'+
+      
     '</div>'+
-    '<div class="field-block"><div class="k">Narrative Supplements</div>'+narr+'</div>'+
+    '<div class="field-block"><div class="k">Assigned Units ('+assigned.length+')</div>'+unitsHtml+pickerHtml+'</div>'+'<div class="field-block"><div class="k">Narrative Supplements</div>'+narr+'</div>'+
     '<label class="field"><span class="lbl">Add supplement</span><textarea id="callSupp" rows="2"></textarea></label>'+
     '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
       '<button class="btn sm" data-action="addSupp" data-call="'+c.id+'">Add note</button>'+
-      '<button class="btn sm" data-action="dispatchUnit" data-call="'+c.id+'">Dispatch unit</button>'+
+      '<button class="btn sm" data-action="callStatus" data-call="'+c.id+'" data-to="ENROUTE">Enroute to call</button>'+
       '<button class="btn sm ok" data-action="callStatus" data-call="'+c.id+'" data-to="ONSCENE">On scene</button>'+
       '<button class="btn sm destructive" data-action="callStatus" data-call="'+c.id+'" data-to="CLEARED">Clear call</button>'+
     '</div>'+
@@ -561,7 +576,7 @@ function wireDispatch(){
       id:id, code:fd.get("code")||"", nature:fd.get("nature")||fd.get("code")||"", priority:selectedPrio,
       post: postId ? (postId+" "+post.name) : "", location: fd.get("location")||"", reportingParty: fd.get("rp")||"",
       callback: fd.get("callback")||"", receivedVia: selectedVia, status:"PENDING", createdAt: nowIso(),
-      assignedUnit:"", narrativeSupplements:[]
+      assignedUnits:[], narrativeSupplements:[]
     };
     STATE.calls.unshift(call);
     logActivity("INCIDENT", "DISPATCH", "CALL CREATED "+id+" — P"+selectedPrio+" "+(call.code||call.nature)+(call.post?" @ "+call.post:""));
@@ -595,23 +610,66 @@ function wireDispatch(){
       var c=STATE.calls.find(function(x){return x.id===id;});
       var from=c.status; c.status=to;
       logActivity("INCIDENT", session.callsign, id+" status "+from+" → "+to);
-      if(to==="CLEARED") uiState.openCallId=null;
-      persist(function(){ return DB.calls.update(id, {status:to}); }, "call "+id+" status");
+      var assignedCs = c.assignedUnits || [];
+      var unitWrites = [];
+      if(to==="ENROUTE" || to==="ONSCENE"){
+        assignedCs.forEach(function(cs){
+          var u = STATE.units.find(function(x){return x.callsign===cs;});
+          if(u && u.status!==to){
+            var ufrom=u.status; u.status=to; u.statusSince=nowIso();
+            logActivity("UNIT","DISPATCH","Unit "+cs+" status "+ufrom+" → "+to);
+            unitWrites.push(DB.units.update(cs, {status:to, status_since:u.statusSince}));
+          }
+        });
+      }
+      if(to==="CLEARED"){
+        assignedCs.forEach(function(cs){
+          var u = STATE.units.find(function(x){return x.callsign===cs;});
+          if(u && u.status!=="AVAILABLE"){
+            var ufrom=u.status; u.status="AVAILABLE"; u.statusSince=nowIso();
+            logActivity("UNIT","DISPATCH","Unit "+cs+" status "+ufrom+" → AVAILABLE");
+            unitWrites.push(DB.units.update(cs, {status:"AVAILABLE", status_since:u.statusSince}));
+          }
+        });
+        uiState.openCallId=null;
+      }
+      persist(function(){ return Promise.all([DB.calls.update(id, {status:to})].concat(unitWrites)); }, "call "+id+" status");
     });
   });
-  var dispBtn = document.querySelector('[data-action="dispatchUnit"]');
-  if(dispBtn) dispBtn.addEventListener("click", function(){
-    var id = dispBtn.getAttribute("data-call"); var c=STATE.calls.find(function(x){return x.id===id;});
-    var avail = STATE.units.find(function(u){ return u.status==="AVAILABLE"; });
-    if(!avail){ toast("No available units."); return; }
-    avail.status="DISPATCHED"; avail.statusSince=nowIso();
-    c.assignedUnit = avail.callsign; c.status="DISPATCHED";
-    logActivity("INCIDENT", session.callsign, "Unit "+avail.callsign+" dispatched to "+id);
-    logActivity("UNIT", "DISPATCH", "Unit "+avail.callsign+" status AVAILABLE → DISPATCHED");
+document.querySelectorAll('[data-action="assignUnit"]').forEach(function(b){
+  b.addEventListener("click", function(){
+    var id = b.getAttribute("data-call"); var c=STATE.calls.find(function(x){return x.id===id;});
+    var picker = document.getElementById("unitPicker");
+    if(!picker || !picker.value){ toast("No available units."); return; }
+    var cs = picker.value;
+    var u = STATE.units.find(function(x){return x.callsign===cs;});
+    if(!u || u.status!=="AVAILABLE") return;
+    c.assignedUnits = c.assignedUnits || [];
+    if(c.assignedUnits.indexOf(cs)===-1) c.assignedUnits.push(cs);
+    u.status="DISPATCHED"; u.statusSince=nowIso();
+    if(c.status==="PENDING") c.status="DISPATCHED";
+    logActivity("INCIDENT", session.callsign, "Unit "+cs+" dispatched to "+id);
+    logActivity("UNIT", "DISPATCH", "Unit "+cs+" status AVAILABLE → DISPATCHED");
     persist(function(){ return Promise.all([
-      DB.calls.update(id, {status:"DISPATCHED", assigned_unit:avail.callsign}),
-      DB.units.update(avail.callsign, {status:"DISPATCHED", status_since:avail.statusSince})
-    ]); }, "dispatch to "+id);
+      DB.calls.update(id, {status:c.status, assigned_units:c.assignedUnits}),
+      DB.units.update(cs, {status:"DISPATCHED", status_since:u.statusSince})
+      ]); }, "dispatch to "+id);
+  });
+});
+  document.querySelectorAll('[data-action="unassignUnit"]').forEach(function(b){
+    b.addEventListener("click", function(){
+      var id=b.getAttribute("data-call"); var cs=b.getAttribute("data-unit");
+      var c=STATE.calls.find(function(x){return x.id===id;});
+      c.assignedUnits = (c.assignedUnits||[]).filter(function(x){return x!==cs;});
+      var u = STATE.units.find(function(x){return x.callsign===cs;});
+      if(u){ u.status="AVAILABLE"; u.statusSince=nowIso(); }
+      logActivity("INCIDENT", session.callsign, "Unit "+cs+" removed from "+id);
+      if(u) logActivity("UNIT","DISPATCH","Unit "+cs+" status → AVAILABLE");
+      persist(function(){ return Promise.all([
+        DB.calls.update(id, {assigned_units:c.assignedUnits}),
+        u ? DB.units.update(cs, {status:"AVAILABLE", status_since:u.statusSince}) : Promise.resolve()
+        ]); }, "unassign "+cs+" from "+id);
+    });
   });
   document.querySelectorAll(".unitStatusSel").forEach(function(sel){
     sel.addEventListener("change", function(){
