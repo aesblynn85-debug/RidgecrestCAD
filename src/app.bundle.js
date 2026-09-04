@@ -6,12 +6,14 @@
 var NAV = [
   {id:"dispatch", label:"Dispatch", ic:"◉"},
   {id:"units", label:"Units", ic:"▤"},
-  {id:"sites", label:"Posts & Tours", ic:"◇"},
+  {id:"sites", label:"Sites", ic:"◇"},
+  {id:"tours", label:"Patrol Tours", ic:"⚑"},
   {id:"chat", label:"Patrol Chat", ic:"✇"},
   {id:"radio", label:"Radio PTT", ic:"▶"},
   {id:"trucks", label:"Truck Log", ic:"▢"},
   {id:"parking", label:"Parking Lot Violations", ic:"⚠"},
   {id:"reports", label:"Field Reports", ic:"☷"},
+  {id:"guardnotes", label:"Guard Notes", ic:"✎"},
   {id:"log", label:"Activity Log", ic:"≡"},
   {id:"users", label:"Users", ic:"☺"},
   // Dispatch/Supervisor/Admin only — filtered out of the sidebar for guards in renderShell,
@@ -232,11 +234,13 @@ function renderView(){
   switch(route){
     case "units": return renderUnits();
     case "sites": return renderSites();
+    case "tours": return renderTours();
     case "chat": return renderChat();
     case "radio": return renderRadio();
     case "trucks": return renderTrucks();
     case "parking": return renderParking();
     case "reports": return renderReports();
+    case "guardnotes": return renderGuardNotes();
     case "log": return renderLog();
     case "users": return renderUsers();
     case "map": return renderMap();
@@ -319,10 +323,12 @@ function wireView(){
   if(route==="dispatch") wireDispatch();
   if(route==="units") wireUnits();
   if(route==="sites") wireSites();
+  if(route==="tours") wireTours();
   if(route==="chat") wireChat();
   if(route==="trucks") wireTrucks();
   if(route==="parking") wireParking();
   if(route==="reports") wireReports();
+  if(route==="guardnotes") wireGuardNotes();
   if(route==="log") wireLog();
   if(route==="users") wireUsers();
   if(route==="map") wireMap();
@@ -370,6 +376,10 @@ function checkLocalBackup(){
       (restored.reports||[]).forEach(function(r){ if(!haveR[r.id]){ STATE.reports.unshift(r); queueWrite(function(){return DB.reports.insert(r);}, "report "+r.id); } });
       var haveT = {}; STATE.trucks.forEach(function(t){haveT[t.id]=1;});
       (restored.trucks||[]).forEach(function(t){ if(!haveT[t.id]){ STATE.trucks.unshift(t); queueWrite(function(){return DB.trucks.insert(t);}, "truck "+t.id); } });
+      var haveP = {}; STATE.policeOnProperty.forEach(function(p){haveP[p.id]=1;});
+      (restored.policeOnProperty||[]).forEach(function(p){ if(!haveP[p.id]){ STATE.policeOnProperty.unshift(p); queueWrite(function(){return DB.police.insert(p);}, "police on property "+p.id); } });
+      var haveN = {}; STATE.guardNotes.forEach(function(n){haveN[n.id]=1;});
+      (restored.guardNotes||[]).forEach(function(n){ if(!haveN[n.id]){ STATE.guardNotes.unshift(n); queueWrite(function(){return DB.guardNotes.insert(n);}, "guard note "+n.id); } });
       var haveMsg = {}; STATE.chat.messages.forEach(function(m){haveMsg[m.channel+"|"+m.at]=1;});
       (restored.chat&&restored.chat.messages||[]).forEach(function(m){ var k=m.channel+"|"+m.at; if(!haveMsg[k]){ STATE.chat.messages.push(m); queueWrite(function(){return DB.chat.addMessage(m);}, "chat message"); } });
     } else {
@@ -661,33 +671,31 @@ function wireUnits(){
   });
 }
 
-/* ---------------- POSTS & TOURS ---------------- */
+/* ---------------- SITES ---------------- */
+// Sites are the security posts/locations themselves. Patrol Tours — the walkable, ordered
+// routes of scan points a supervisor builds live and assigns to guards — are a separate concept
+// with their own nav tab (renderTours/wireTours in part3.js); one site can have many tours. This
+// view is just the site directory now; the old per-checkpoint scan UI moved to Patrol Tours.
 function renderSites(){
-  var totalCp = STATE.posts.reduce(function(s,p){return s+p.checkpoints.length;},0);
-  var overdueCount = 0;
-  var html = '<div class="card"><div class="section-head"><h2>Post Directory &amp; Patrol Tours</h2><span class="meta">'+STATE.posts.length+' posts · '+totalCp+' checkpoints</span></div>';
-  STATE.posts.forEach(function(p){
-    html += '<div style="margin-bottom:18px;"><div style="display:flex;justify-content:space-between;align-items:baseline;"><div><b>'+escapeHtml(p.id)+'</b> — '+escapeHtml(p.name)+' <span class="pill blue">'+escapeHtml(p.kind)+'</span></div></div>'+
-      '<div class="small-muted">'+escapeHtml(p.org)+' · '+escapeHtml(p.address)+'</div>'+
-      '<div class="small-muted" style="margin:8px 0 4px;text-transform:uppercase;letter-spacing:.05em;">Patrol Checkpoints</div>';
-    p.checkpoints.forEach(function(cp){
-      var overdue = false;
-      if(cp.lastScan){
-        var mins=(Date.now()-new Date(cp.lastScan).getTime())/60000;
-        overdue = mins > cp.intervalMin;
-      } else overdue = true;
-      if(overdue) overdueCount++;
-      html += '<div class="checkbox-row" style="justify-content:space-between;">'+
-        '<div><div>'+escapeHtml(cp.name)+'</div><div class="small-muted">every '+cp.intervalMin+'m · '+(cp.lastScan? "last "+fmtShort(cp.lastScan)+" by "+escapeHtml(cp.lastScanBy) : "never scanned")+(overdue?' <span class="overdue-badge">OVERDUE</span>':'')+'</div></div>'+
-        '<button class="btn sm" data-scan-post="'+p.id+'" data-scan-cp="'+cp.id+'">Scan</button></div>';
-    });
-    html += '</div>';
-  });
+  var html = '<div class="card"><div class="section-head"><h2>Site Directory</h2><span class="meta">'+STATE.posts.length+' sites</span></div>';
+  if(!STATE.posts.length){
+    html += '<div class="empty-state">No sites yet.</div>';
+  } else {
+    html += STATE.posts.map(function(p){
+      var tourCount = (STATE.patrolTours||[]).filter(function(t){return t.postId===p.id && t.active;}).length;
+      return '<div class="list-item">'+
+        '<div class="top"><span><b>'+escapeHtml(p.id)+'</b> — '+escapeHtml(p.name)+'</span><span class="pill blue">'+escapeHtml(p.kind)+'</span></div>'+
+        '<div class="meta">'+escapeHtml(p.org)+' · '+escapeHtml(p.address||"No address on file")+'</div>'+
+        '<div class="small-muted" style="margin-top:4px;">'+tourCount+' active patrol tour'+(tourCount===1?"":"s")+' — see Patrol Tours</div>'+
+      '</div>';
+    }).join("");
+  }
   html += '</div>';
   return html;
 }
 /* Reads the device's current GPS position. Never rejects — resolves null on denial/timeout/no
-   support — so a scan is never blocked by a guard's location settings. */
+   support — so a scan (or, in Patrol Tours, capturing a new point) is never blocked by a
+   guard's or supervisor's location settings. */
 function getGeo(){
   return new Promise(function(resolve){
     if(!navigator.geolocation){ resolve(null); return; }
@@ -700,19 +708,7 @@ function getGeo(){
 }
 
 function wireSites(){
-  document.querySelectorAll("[data-scan-cp]").forEach(function(b){
-    b.addEventListener("click", function(){
-      var pid=b.getAttribute("data-scan-post"), cid=b.getAttribute("data-scan-cp");
-      var p=STATE.posts.find(function(x){return x.id===pid;}); var cp=p.checkpoints.find(function(x){return x.id===cid;});
-      b.disabled = true; var origText = b.textContent; b.textContent = "Scanning…";
-      getGeo().then(function(loc){
-        cp.lastScan = nowIso(); cp.lastScanBy = session.callsign;
-        logActivity("CHECKPOINT", session.callsign, "Tour scan — "+cp.name+" at "+pid+" by "+session.callsign+(loc?"":" (location unavailable)"));
-        persist(function(){ return DB.checkpoints.scan(cid, pid, session.callsign, loc); }, "checkpoint scan");
-        if(!loc) toast("Scan logged — couldn't get this device's location.");
-      });
-    });
-  });
+  // Plain directory — nothing to wire yet.
 }
 
 /* ---------------- PATROL CHAT ---------------- */
@@ -1031,10 +1027,11 @@ function renderReports(){
     '<button class="btn sm" data-action="reportsCsv">⭳ Reports CSV</button></div>';
   html += '<div class="tabs">'+
     '<button class="'+(tab==="incident"?"active":"")+'" data-reptab="incident">Incident Reports '+STATE.reports.length+'</button>'+
-    '<button class="'+(tab==="police"?"active":"")+'" data-reptab="police">Police On Property '+STATE.policeOnProperty.length+' now</button>'+
+    '<button class="'+(tab==="police"?"active":"")+'" data-reptab="police">Police On Property '+STATE.policeOnProperty.filter(function(p){return !p.departedAt;}).length+' now</button>'+
     '<button class="'+(tab==="self"?"active":"")+'" data-reptab="self">Self-Initiated Call</button>'+
   '</div>';
-  if(tab!=="incident"){
+  if(tab==="police"){ html += renderPoliceOnProperty(); return html; }
+  if(tab==="self"){
     html += '<div class="empty-state">Nothing logged in this tab yet.</div>';
     return html;
   }
@@ -1184,6 +1181,144 @@ function wireReports(){
     STATE.reports.forEach(function(r){ rows.push([r.id,r.typeLabel,r.status,r.occurred,r.subject,r.writtenBy,r.post,r.narrative]); });
     downloadCsv("field_reports.csv", rows);
   });
+  wirePoliceOnProperty();
+}
+
+/* ---------------- POLICE ON PROPERTY (tab within Field Reports) ---------------- */
+function renderPoliceOnProperty(){
+  var onSite = STATE.policeOnProperty.filter(function(p){return !p.departedAt;});
+  var past = STATE.policeOnProperty.filter(function(p){return p.departedAt;});
+  var view = uiState.policeView||"onsite";
+  var list = view==="onsite"?onSite:view==="past"?past:STATE.policeOnProperty;
+  var html = '<div class="two-col">';
+  html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">Log Police Arrival</div><form id="policeForm">'+
+    '<label class="field"><span class="lbl">Agency <span class="req">*</span></span><input type="text" name="agency" required placeholder="Ridgecrest PD, county sheriff…"></label>'+
+    '<label class="field"><span class="lbl">Officer / Badge #</span><input type="text" name="officer" placeholder="Name or badge number"></label>'+
+    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
+    '<label class="field"><span class="lbl">Reason On Property <span class="req">*</span></span><input type="text" name="reason" required placeholder="Welfare check, traffic stop, call for service…"></label>'+
+    '<label class="field"><span class="lbl">Notes</span><textarea name="notes" rows="2"></textarea></label>'+
+    '<button type="submit" class="btn primary" style="width:100%;">Log arrival — time in now</button></form></div>';
+  html += '<div class="card"><div class="tabs">'+["onsite","past","all"].map(function(v){return '<button class="'+(view===v?"active":"")+'" data-policeview="'+v+'">'+(v==="onsite"?"On property ("+onSite.length+")":v==="past"?"Departed":"All")+'</button>';}).join("")+'</div>';
+  if(!list.length){ html += '<div class="empty-state">No police-on-property entries in this view.</div>'; }
+  else {
+    html += list.map(function(p){
+      return '<div class="list-item"><div class="top"><span>'+escapeHtml(p.agency)+(p.officer?' — '+escapeHtml(p.officer):'')+'</span>'+
+        '<span class="pill '+(p.departedAt?"muted":"warn")+'">'+(p.departedAt?"DEPARTED "+fmtShort(p.departedAt):"ON PROPERTY")+'</span></div>'+
+        '<div class="subj">'+escapeHtml(p.reason)+'</div>'+
+        '<div class="meta">Arrived '+fmtShort(p.arrivedAt)+(p.post?' · '+escapeHtml(p.post):'')+(p.notes?' · '+escapeHtml(p.notes):'')+'</div>'+
+        (!p.departedAt? '<button class="btn sm" style="margin-top:6px;" data-police-depart="'+p.id+'">Log departure</button>' : '<div class="small-muted">On property '+Math.round((new Date(p.departedAt)-new Date(p.arrivedAt))/60000)+'m</div>')+
+      '</div>';
+    }).join("");
+  }
+  html += '</div></div>';
+  return html;
+}
+function wirePoliceOnProperty(){
+  document.querySelectorAll("[data-policeview]").forEach(function(b){ b.addEventListener("click", function(){ uiState.policeView=b.getAttribute("data-policeview"); render(); }); });
+  var form = document.getElementById("policeForm");
+  if(form) form.addEventListener("submit", function(e){
+    e.preventDefault();
+    var fd = new FormData(form);
+    if(!fd.get("agency") || !fd.get("reason")){ toast("Agency and reason on property are required."); return; }
+    var postId = fd.get("post"); var post = STATE.posts.find(function(x){return x.id===postId;});
+    var p = {id:uid("police"), agency:fd.get("agency"), officer:fd.get("officer")||"",
+      post: postId?(postId+" "+(post?post.name:"")):"", reason:fd.get("reason"), notes:fd.get("notes")||"",
+      arrivedAt:nowIso(), departedAt:null};
+    STATE.policeOnProperty.unshift(p);
+    logActivity("POLICE", session.callsign, "Police on property — "+p.agency+(p.officer?" ("+p.officer+")":"")+" — "+p.reason);
+    form.reset();
+    persist(function(){ return DB.police.insert(p); }, "police on property — "+p.agency);
+  });
+  document.querySelectorAll("[data-police-depart]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var p = STATE.policeOnProperty.find(function(x){return x.id===b.getAttribute("data-police-depart");});
+      if(!p) return;
+      p.departedAt = nowIso();
+      logActivity("POLICE", session.callsign, "Police departed — "+p.agency+(p.officer?" ("+p.officer+")":""));
+      persist(function(){ return DB.police.depart(p.id, p.departedAt); }, "police departure — "+p.agency);
+    });
+  });
+}
+
+/* ---------------- GUARD NOTES (shared shift pass-down board) ---------------- */
+function renderGuardNotes(){
+  var open = STATE.guardNotes.filter(function(n){return !n.resolved;});
+  var view = uiState.guardNotesFilter||"open";
+  var list = view==="open"?open:view==="resolved"?STATE.guardNotes.filter(function(n){return n.resolved;}):STATE.guardNotes;
+  // Pinned notes float to the top within whatever list is showing, newest first within each group.
+  list = list.slice().sort(function(a,b){ if(!!b.pinned - !!a.pinned !== 0) return (b.pinned?1:0)-(a.pinned?1:0); return new Date(b.createdAt)-new Date(a.createdAt); });
+  var html = '<div class="section-head"><h2>Guard Notes</h2><span class="meta">'+open.length+' open</span></div>';
+  html += '<div class="two-col">';
+  html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">New Note</div><form id="guardNoteForm">'+
+    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">General — not site-specific</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
+    '<label class="field"><span class="lbl">Note <span class="req">*</span></span><textarea name="text" rows="4" required placeholder="Gate code changed, BOLO on a vehicle, equipment down, handoff info for next shift…"></textarea></label>'+
+    (session.role==="SUPV"? '<label class="chk-row"><input type="checkbox" name="pinned"> Pin to top — important</label>' : '')+
+    '<button type="submit" class="btn primary" style="width:100%;">Post note</button></form></div>';
+  html += '<div class="card"><div class="tabs">'+["open","resolved","all"].map(function(v){return '<button class="'+(view===v?"active":"")+'" data-gnfilter="'+v+'">'+v[0].toUpperCase()+v.slice(1)+'</button>';}).join("")+'</div>';
+  if(!list.length){ html += '<div class="empty-state">No notes in this view.</div>'; }
+  else {
+    html += list.map(function(n){
+      return '<div class="list-item">'+
+        '<div class="top">'+(n.pinned? '<span class="pill warn">PINNED</span> ' : '')+'<span>'+escapeHtml(n.post||"General")+'</span>'+
+        '<span class="pill '+(n.resolved?"muted":"ok")+'">'+(n.resolved?"RESOLVED":"OPEN")+'</span></div>'+
+        '<div class="subj">'+nl2br(n.text)+'</div>'+
+        '<div class="meta">'+escapeHtml(n.authorName)+' · '+escapeHtml(n.authorCallsign)+' · '+fmtShort(n.createdAt)+
+          (n.resolved? ' · resolved by '+escapeHtml(n.resolvedBy||"")+' '+fmtShort(n.resolvedAt) : '')+'</div>'+
+        '<div style="display:flex;gap:8px;margin-top:6px;">'+
+          (!n.resolved? '<button class="btn sm" data-gn-resolve="'+n.id+'">Mark resolved</button>' : '<button class="btn sm" data-gn-reopen="'+n.id+'">Reopen</button>')+
+          (session.role==="SUPV"? '<button class="btn sm" data-gn-pin="'+n.id+'">'+(n.pinned?"Unpin":"Pin")+'</button>' : '')+
+        '</div>'+
+      '</div>';
+    }).join("");
+  }
+  html += '</div></div>';
+  return html;
+}
+function wireGuardNotes(){
+  document.querySelectorAll("[data-gnfilter]").forEach(function(b){ b.addEventListener("click", function(){ uiState.guardNotesFilter=b.getAttribute("data-gnfilter"); render(); }); });
+  var form = document.getElementById("guardNoteForm");
+  if(form) form.addEventListener("submit", function(e){
+    e.preventDefault();
+    var fd = new FormData(form);
+    var text = (fd.get("text")||"").trim();
+    if(!text){ toast("Note text is required."); return; }
+    var postId = fd.get("post"); var post = STATE.posts.find(function(x){return x.id===postId;});
+    var n = {id:uid("note"), post: postId?(postId+" "+(post?post.name:"")):"", text:text,
+      pinned: session.role==="SUPV" && fd.get("pinned")==="on",
+      authorName: session.name, authorCallsign: session.callsign, createdAt:nowIso(),
+      resolved:false, resolvedAt:null, resolvedBy:null};
+    STATE.guardNotes.unshift(n);
+    logActivity("NOTE", session.callsign, "Guard note posted"+(n.post?" — "+n.post:"")+": "+text.slice(0,80));
+    form.reset();
+    persist(function(){ return DB.guardNotes.insert(n); }, "guard note");
+  });
+  document.querySelectorAll("[data-gn-resolve]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var n = STATE.guardNotes.find(function(x){return x.id===b.getAttribute("data-gn-resolve");});
+      if(!n) return;
+      n.resolved=true; n.resolvedAt=nowIso(); n.resolvedBy=session.callsign;
+      logActivity("NOTE", session.callsign, "Guard note resolved — "+n.text.slice(0,80));
+      persist(function(){ return DB.guardNotes.setResolved(n.id, true, n.resolvedAt, n.resolvedBy); }, "guard note resolve");
+    });
+  });
+  document.querySelectorAll("[data-gn-reopen]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var n = STATE.guardNotes.find(function(x){return x.id===b.getAttribute("data-gn-reopen");});
+      if(!n) return;
+      n.resolved=false; n.resolvedAt=null; n.resolvedBy=null;
+      logActivity("NOTE", session.callsign, "Guard note reopened — "+n.text.slice(0,80));
+      persist(function(){ return DB.guardNotes.setResolved(n.id, false, null, null); }, "guard note reopen");
+    });
+  });
+  document.querySelectorAll("[data-gn-pin]").forEach(function(b){
+    b.addEventListener("click", function(){
+      if(session.role!=="SUPV") return;
+      var n = STATE.guardNotes.find(function(x){return x.id===b.getAttribute("data-gn-pin");});
+      if(!n) return;
+      n.pinned = !n.pinned;
+      persist(function(){ return DB.guardNotes.setPinned(n.id, n.pinned); }, "guard note pin");
+    });
+  });
 }
 
 /* ---------------- ACTIVITY LOG ---------------- */
@@ -1330,7 +1465,7 @@ function wireUsers(){
    Supervisor assigned to a site only sees that site's guards, matched against which post each
    guard's unit is currently posted to (units[].post). Left unassigned — the default — an
    account sees every site, i.e. Dispatch/Admin. */
-var RIDGECREST_CENTER = [34.1472165, -83.9461604]; // ShieldTec Site (STEC-61), 4961 Golden Parkway, Buford, GA 30518 — default view before any pings arrive
+var RIDGECREST_CENTER = [35.6225, -117.6709]; // Ridgecrest, CA — default view before any pings arrive
 var _liveMapView = null; // remembers pan/zoom across re-renders (the view's DOM, and the map with it, is rebuilt on every render() call)
 function mapScopePostId(){ return (session && session.assignedPostId) || ""; }
 function mapScopeLabel(postId){
