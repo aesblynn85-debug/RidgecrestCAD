@@ -282,16 +282,47 @@ create table if not exists parking_violations (
   supervisor_notes text default ''
 );
 
--- ---------- police on property (log-only for now) ----------
+-- ---------- police on property ----------
+-- id is client-generated text (like calls/reports/trucks/parking_violations above), not a
+-- server-side uuid, so the app can add the row to in-memory STATE and reference it (e.g. to
+-- log a departure) before the insert round-trips to Supabase.
 create table if not exists police_on_property (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   arrived_at timestamptz not null default now(),
   departed_at timestamptz,
   agency text default '',
   officer text default '',
+  post text default '',
   reason text default '',
   notes text default ''
 );
+-- Migration for a database that already ran the original uuid-id version of this table above.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='police_on_property' and column_name='id' and data_type='uuid'
+  ) then
+    alter table police_on_property alter column id drop default;
+    alter table police_on_property alter column id type text using id::text;
+  end if;
+end $$;
+alter table police_on_property add column if not exists post text default '';
+
+-- ---------- guard notes (shared shift pass-down board) ----------
+create table if not exists guard_notes (
+  id text primary key,
+  post text default '',
+  text text not null,
+  pinned boolean default false,
+  author text default '',
+  author_callsign text default '',
+  created_at timestamptz not null default now(),
+  resolved boolean default false,
+  resolved_at timestamptz,
+  resolved_by text
+);
+create index if not exists guard_notes_created_idx on guard_notes (created_at desc);
 
 -- ---------- activity log (append-only audit trail) ----------
 create table if not exists activity_log (
@@ -341,6 +372,7 @@ alter table trucks enable row level security;
 alter table reports enable row level security;
 alter table parking_violations enable row level security;
 alter table police_on_property enable row level security;
+alter table guard_notes enable row level security;
 alter table activity_log enable row level security;
 alter table counters enable row level security;
 alter table patrol_tours enable row level security;
@@ -353,7 +385,7 @@ declare t text;
 begin
   for t in select unnest(array['users','units','posts','checkpoints','checkpoint_scans','guard_locations','calls','call_supplements',
     'chat_channels','chat_messages','trucks','reports','parking_violations',
-    'police_on_property','activity_log','counters',
+    'police_on_property','guard_notes','activity_log','counters',
     'patrol_tours','patrol_tour_points','tour_assignments','tour_point_scans'])
   loop
     execute format('drop policy if exists anon_all on %I;', t);
@@ -441,7 +473,7 @@ do $$
 declare t text;
 begin
   for t in select unnest(array['units','calls','call_supplements','chat_messages','trucks',
-    'reports','parking_violations','checkpoints','checkpoint_scans','guard_locations','activity_log',
+    'reports','parking_violations','police_on_property','guard_notes','checkpoints','checkpoint_scans','guard_locations','activity_log',
     'patrol_tours','patrol_tour_points','tour_assignments','tour_point_scans'])
   loop
     if not exists (
