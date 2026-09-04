@@ -190,10 +190,11 @@ function renderReports(){
     '<button class="btn sm" data-action="reportsCsv">⭳ Reports CSV</button></div>';
   html += '<div class="tabs">'+
     '<button class="'+(tab==="incident"?"active":"")+'" data-reptab="incident">Incident Reports '+STATE.reports.length+'</button>'+
-    '<button class="'+(tab==="police"?"active":"")+'" data-reptab="police">Police On Property '+STATE.policeOnProperty.length+' now</button>'+
+    '<button class="'+(tab==="police"?"active":"")+'" data-reptab="police">Police On Property '+STATE.policeOnProperty.filter(function(p){return !p.departedAt;}).length+' now</button>'+
     '<button class="'+(tab==="self"?"active":"")+'" data-reptab="self">Self-Initiated Call</button>'+
   '</div>';
-  if(tab!=="incident"){
+  if(tab==="police"){ html += renderPoliceOnProperty(); return html; }
+  if(tab==="self"){
     html += '<div class="empty-state">Nothing logged in this tab yet.</div>';
     return html;
   }
@@ -342,6 +343,144 @@ function wireReports(){
     var rows=[["ID","Type","Status","Occurred","Subject","WrittenBy","Post","Narrative"]];
     STATE.reports.forEach(function(r){ rows.push([r.id,r.typeLabel,r.status,r.occurred,r.subject,r.writtenBy,r.post,r.narrative]); });
     downloadCsv("field_reports.csv", rows);
+  });
+  wirePoliceOnProperty();
+}
+
+/* ---------------- POLICE ON PROPERTY (tab within Field Reports) ---------------- */
+function renderPoliceOnProperty(){
+  var onSite = STATE.policeOnProperty.filter(function(p){return !p.departedAt;});
+  var past = STATE.policeOnProperty.filter(function(p){return p.departedAt;});
+  var view = uiState.policeView||"onsite";
+  var list = view==="onsite"?onSite:view==="past"?past:STATE.policeOnProperty;
+  var html = '<div class="two-col">';
+  html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">Log Police Arrival</div><form id="policeForm">'+
+    '<label class="field"><span class="lbl">Agency <span class="req">*</span></span><input type="text" name="agency" required placeholder="Ridgecrest PD, county sheriff…"></label>'+
+    '<label class="field"><span class="lbl">Officer / Badge #</span><input type="text" name="officer" placeholder="Name or badge number"></label>'+
+    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
+    '<label class="field"><span class="lbl">Reason On Property <span class="req">*</span></span><input type="text" name="reason" required placeholder="Welfare check, traffic stop, call for service…"></label>'+
+    '<label class="field"><span class="lbl">Notes</span><textarea name="notes" rows="2"></textarea></label>'+
+    '<button type="submit" class="btn primary" style="width:100%;">Log arrival — time in now</button></form></div>';
+  html += '<div class="card"><div class="tabs">'+["onsite","past","all"].map(function(v){return '<button class="'+(view===v?"active":"")+'" data-policeview="'+v+'">'+(v==="onsite"?"On property ("+onSite.length+")":v==="past"?"Departed":"All")+'</button>';}).join("")+'</div>';
+  if(!list.length){ html += '<div class="empty-state">No police-on-property entries in this view.</div>'; }
+  else {
+    html += list.map(function(p){
+      return '<div class="list-item"><div class="top"><span>'+escapeHtml(p.agency)+(p.officer?' — '+escapeHtml(p.officer):'')+'</span>'+
+        '<span class="pill '+(p.departedAt?"muted":"warn")+'">'+(p.departedAt?"DEPARTED "+fmtShort(p.departedAt):"ON PROPERTY")+'</span></div>'+
+        '<div class="subj">'+escapeHtml(p.reason)+'</div>'+
+        '<div class="meta">Arrived '+fmtShort(p.arrivedAt)+(p.post?' · '+escapeHtml(p.post):'')+(p.notes?' · '+escapeHtml(p.notes):'')+'</div>'+
+        (!p.departedAt? '<button class="btn sm" style="margin-top:6px;" data-police-depart="'+p.id+'">Log departure</button>' : '<div class="small-muted">On property '+Math.round((new Date(p.departedAt)-new Date(p.arrivedAt))/60000)+'m</div>')+
+      '</div>';
+    }).join("");
+  }
+  html += '</div></div>';
+  return html;
+}
+function wirePoliceOnProperty(){
+  document.querySelectorAll("[data-policeview]").forEach(function(b){ b.addEventListener("click", function(){ uiState.policeView=b.getAttribute("data-policeview"); render(); }); });
+  var form = document.getElementById("policeForm");
+  if(form) form.addEventListener("submit", function(e){
+    e.preventDefault();
+    var fd = new FormData(form);
+    if(!fd.get("agency") || !fd.get("reason")){ toast("Agency and reason on property are required."); return; }
+    var postId = fd.get("post"); var post = STATE.posts.find(function(x){return x.id===postId;});
+    var p = {id:uid("police"), agency:fd.get("agency"), officer:fd.get("officer")||"",
+      post: postId?(postId+" "+(post?post.name:"")):"", reason:fd.get("reason"), notes:fd.get("notes")||"",
+      arrivedAt:nowIso(), departedAt:null};
+    STATE.policeOnProperty.unshift(p);
+    logActivity("POLICE", session.callsign, "Police on property — "+p.agency+(p.officer?" ("+p.officer+")":"")+" — "+p.reason);
+    form.reset();
+    persist(function(){ return DB.police.insert(p); }, "police on property — "+p.agency);
+  });
+  document.querySelectorAll("[data-police-depart]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var p = STATE.policeOnProperty.find(function(x){return x.id===b.getAttribute("data-police-depart");});
+      if(!p) return;
+      p.departedAt = nowIso();
+      logActivity("POLICE", session.callsign, "Police departed — "+p.agency+(p.officer?" ("+p.officer+")":""));
+      persist(function(){ return DB.police.depart(p.id, p.departedAt); }, "police departure — "+p.agency);
+    });
+  });
+}
+
+/* ---------------- GUARD NOTES (shared shift pass-down board) ---------------- */
+function renderGuardNotes(){
+  var open = STATE.guardNotes.filter(function(n){return !n.resolved;});
+  var view = uiState.guardNotesFilter||"open";
+  var list = view==="open"?open:view==="resolved"?STATE.guardNotes.filter(function(n){return n.resolved;}):STATE.guardNotes;
+  // Pinned notes float to the top within whatever list is showing, newest first within each group.
+  list = list.slice().sort(function(a,b){ if(!!b.pinned - !!a.pinned !== 0) return (b.pinned?1:0)-(a.pinned?1:0); return new Date(b.createdAt)-new Date(a.createdAt); });
+  var html = '<div class="section-head"><h2>Guard Notes</h2><span class="meta">'+open.length+' open</span></div>';
+  html += '<div class="two-col">';
+  html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">New Note</div><form id="guardNoteForm">'+
+    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">General — not site-specific</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
+    '<label class="field"><span class="lbl">Note <span class="req">*</span></span><textarea name="text" rows="4" required placeholder="Gate code changed, BOLO on a vehicle, equipment down, handoff info for next shift…"></textarea></label>'+
+    (session.role==="SUPV"? '<label class="chk-row"><input type="checkbox" name="pinned"> Pin to top — important</label>' : '')+
+    '<button type="submit" class="btn primary" style="width:100%;">Post note</button></form></div>';
+  html += '<div class="card"><div class="tabs">'+["open","resolved","all"].map(function(v){return '<button class="'+(view===v?"active":"")+'" data-gnfilter="'+v+'">'+v[0].toUpperCase()+v.slice(1)+'</button>';}).join("")+'</div>';
+  if(!list.length){ html += '<div class="empty-state">No notes in this view.</div>'; }
+  else {
+    html += list.map(function(n){
+      return '<div class="list-item">'+
+        '<div class="top">'+(n.pinned? '<span class="pill warn">PINNED</span> ' : '')+'<span>'+escapeHtml(n.post||"General")+'</span>'+
+        '<span class="pill '+(n.resolved?"muted":"ok")+'">'+(n.resolved?"RESOLVED":"OPEN")+'</span></div>'+
+        '<div class="subj">'+nl2br(n.text)+'</div>'+
+        '<div class="meta">'+escapeHtml(n.authorName)+' · '+escapeHtml(n.authorCallsign)+' · '+fmtShort(n.createdAt)+
+          (n.resolved? ' · resolved by '+escapeHtml(n.resolvedBy||"")+' '+fmtShort(n.resolvedAt) : '')+'</div>'+
+        '<div style="display:flex;gap:8px;margin-top:6px;">'+
+          (!n.resolved? '<button class="btn sm" data-gn-resolve="'+n.id+'">Mark resolved</button>' : '<button class="btn sm" data-gn-reopen="'+n.id+'">Reopen</button>')+
+          (session.role==="SUPV"? '<button class="btn sm" data-gn-pin="'+n.id+'">'+(n.pinned?"Unpin":"Pin")+'</button>' : '')+
+        '</div>'+
+      '</div>';
+    }).join("");
+  }
+  html += '</div></div>';
+  return html;
+}
+function wireGuardNotes(){
+  document.querySelectorAll("[data-gnfilter]").forEach(function(b){ b.addEventListener("click", function(){ uiState.guardNotesFilter=b.getAttribute("data-gnfilter"); render(); }); });
+  var form = document.getElementById("guardNoteForm");
+  if(form) form.addEventListener("submit", function(e){
+    e.preventDefault();
+    var fd = new FormData(form);
+    var text = (fd.get("text")||"").trim();
+    if(!text){ toast("Note text is required."); return; }
+    var postId = fd.get("post"); var post = STATE.posts.find(function(x){return x.id===postId;});
+    var n = {id:uid("note"), post: postId?(postId+" "+(post?post.name:"")):"", text:text,
+      pinned: session.role==="SUPV" && fd.get("pinned")==="on",
+      authorName: session.name, authorCallsign: session.callsign, createdAt:nowIso(),
+      resolved:false, resolvedAt:null, resolvedBy:null};
+    STATE.guardNotes.unshift(n);
+    logActivity("NOTE", session.callsign, "Guard note posted"+(n.post?" — "+n.post:"")+": "+text.slice(0,80));
+    form.reset();
+    persist(function(){ return DB.guardNotes.insert(n); }, "guard note");
+  });
+  document.querySelectorAll("[data-gn-resolve]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var n = STATE.guardNotes.find(function(x){return x.id===b.getAttribute("data-gn-resolve");});
+      if(!n) return;
+      n.resolved=true; n.resolvedAt=nowIso(); n.resolvedBy=session.callsign;
+      logActivity("NOTE", session.callsign, "Guard note resolved — "+n.text.slice(0,80));
+      persist(function(){ return DB.guardNotes.setResolved(n.id, true, n.resolvedAt, n.resolvedBy); }, "guard note resolve");
+    });
+  });
+  document.querySelectorAll("[data-gn-reopen]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var n = STATE.guardNotes.find(function(x){return x.id===b.getAttribute("data-gn-reopen");});
+      if(!n) return;
+      n.resolved=false; n.resolvedAt=null; n.resolvedBy=null;
+      logActivity("NOTE", session.callsign, "Guard note reopened — "+n.text.slice(0,80));
+      persist(function(){ return DB.guardNotes.setResolved(n.id, false, null, null); }, "guard note reopen");
+    });
+  });
+  document.querySelectorAll("[data-gn-pin]").forEach(function(b){
+    b.addEventListener("click", function(){
+      if(session.role!=="SUPV") return;
+      var n = STATE.guardNotes.find(function(x){return x.id===b.getAttribute("data-gn-pin");});
+      if(!n) return;
+      n.pinned = !n.pinned;
+      persist(function(){ return DB.guardNotes.setPinned(n.id, n.pinned); }, "guard note pin");
+    });
   });
 }
 
