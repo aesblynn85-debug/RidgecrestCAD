@@ -181,6 +181,14 @@ create table if not exists calls (
   created_at timestamptz not null default now()
 );
 
+-- Multiple units can now be assigned to one call (dispatcher picks specific units rather
+-- than the app auto-assigning the first available one). assigned_unit above is kept for
+-- backward compatibility but is no longer written to by the app; assigned_units is the
+-- array the UI reads/writes going forward.
+alter table calls add column if not exists assigned_units text[] not null default '{}';
+update calls set assigned_units = array[assigned_unit]
+where coalesce(assigned_unit,'') <> '' and coalesce(array_length(assigned_units,1),0) = 0;
+
 create table if not exists call_supplements (
   id uuid primary key default gen_random_uuid(),
   call_id text not null references calls(id) on delete cascade,
