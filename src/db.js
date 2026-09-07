@@ -1,338 +1,376 @@
 /* Ridgecrest CAD — Supabase persistence layer.
-   Loads the whole app state from Postgres on startup, and exposes small
-   per-entity write functions that each mutation calls right after updating
-   the in-memory STATE object, so writes are targeted (one row) instead of
-   re-publishing the entire app state on every change. */
+Loads the whole app state from Postgres on startup, and exposes small
+per-entity write functions that each mutation calls right after updating
+the in-memory STATE object, so writes are targeted (one row) instead of
+re-publishing the entire app state on every change. */
 (function(){
-"use strict";
+   "use strict";
 
-var CFG = window.__CAD_CONFIG || {};
-var CONFIGURED = !!(CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY &&
-  CFG.SUPABASE_URL.indexOf("REPLACE_WITH") !== 0 && CFG.SUPABASE_ANON_KEY.indexOf("REPLACE_WITH") !== 0);
+ var CFG = window.__CAD_CONFIG || {};
+   var CONFIGURED = !!(CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY &&
+                         CFG.SUPABASE_URL.indexOf("REPLACE_WITH") !== 0 && CFG.SUPABASE_ANON_KEY.indexOf("REPLACE_WITH") !== 0);
 
-var sb = CONFIGURED ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
-  realtime: { params: { eventsPerSecond: 5 } }
-}) : null;
+ var sb = CONFIGURED ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
+      realtime: { params: { eventsPerSecond: 5 } }
+ }) : null;
 
-function must(){ if(!sb) throw new Error("Supabase is not configured — set SUPABASE_URL/SUPABASE_ANON_KEY in src/config.js"); }
-function chk(res){ if(res.error) throw res.error; return res.data; }
+ function must(){ if(!sb) throw new Error("Supabase is not configured — set SUPABASE_URL/SUPABASE_ANON_KEY in src/config.js"); }
+   function chk(res){ if(res.error) throw res.error; return res.data; }
 
-/* ---------- mappers: DB row (snake_case) <-> app object (camelCase), matching the original STATE shape ---------- */
-function callFromRow(r){
-  return {id:r.id, code:r.code||"", nature:r.nature||"", priority:r.priority, post:r.post||"", location:r.location||"",
-    reportingParty:r.reporting_party||"", callback:r.callback||"", receivedVia:r.received_via||"", status:r.status,
-    createdAt:r.created_at, assignedUnits:r.assigned_units||[], narrativeSupplements:[]};
-}
-function callToRow(c){
-  return {id:c.id, code:c.code||"", nature:c.nature||"", priority:c.priority, post:c.post||"", location:c.location||"",
-    reporting_party:c.reportingParty||"", callback:c.callback||"", received_via:c.receivedVia||"", status:c.status,
-    created_at:c.createdAt, assigned_units:c.assignedUnits||[]};
-}
-function unitFromRow(r){
-  return {callsign:r.callsign, name:r.name, type:r.type, status:r.status, statusSince:r.status_since, post:r.post||"",
-    shift:r.shift||"", homeCallsign:r.home_callsign||""};
-}
-function unitToRow(u){
-  return {callsign:u.callsign, name:u.name, type:u.type, status:u.status, status_since:u.statusSince, post:u.post||"",
-    shift:u.shift||"", home_callsign:u.homeCallsign||""};
-}
-function truckFromRow(r){
-  return {id:r.id, company:r.company||"", driver:r.driver||"", trailer:r.trailer||"", tractor:r.tractor||"",
-    post:r.post||"", purpose:r.purpose||"", dock:r.dock||"", seal:r.seal||"", bol:r.bol||"", license:r.license||"",
-    notes:r.notes||"", timeIn:r.time_in, timeOut:r.time_out};
-}
-function truckToRow(t){
-  return {id:t.id, company:t.company||"", driver:t.driver||"", trailer:t.trailer||"", tractor:t.tractor||"",
-    post:t.post||"", purpose:t.purpose||"", dock:t.dock||"", seal:t.seal||"", bol:t.bol||"", license:t.license||"",
-    notes:t.notes||"", time_in:t.timeIn, time_out:t.timeOut};
-}
-function reportFromRow(r){
-  return {id:r.id, type:r.type||"", typeLabel:r.type_label||"", status:r.status, attachToCall:r.attach_to_call||"",
-    post:r.post||"", occurred:r.occurred, location:r.location||"", subject:r.subject||"", narrative:r.narrative||"",
-    involvedParties:r.involved_parties||"", witnesses:r.witnesses||"", propertyDamage:r.property_damage||"",
-    estLoss:r.est_loss||"", actionTaken:r.action_taken||"",
-    notifications:{injury:!!r.notify_injury, ems:!!r.notify_ems, police:!!r.notify_police},
-    whoElseNotified:r.who_else_notified||"", forceUsed:!!r.force_used, writtenBy:r.written_by||"",
-    writtenByCallsign:r.written_by_callsign||"", submittedAt:r.submitted_at, reviewedAt:r.reviewed_at,
-    reviewedBy:r.reviewed_by, supervisorNotes:r.supervisor_notes||""};
-}
-function reportToRow(r){
-  return {id:r.id, type:r.type||"", type_label:r.typeLabel||"", status:r.status, attach_to_call:r.attachToCall||"",
-    post:r.post||"", occurred:r.occurred, location:r.location||"", subject:r.subject||"", narrative:r.narrative||"",
-    involved_parties:r.involvedParties||"", witnesses:r.witnesses||"", property_damage:r.propertyDamage||"",
-    est_loss:r.estLoss||"", action_taken:r.actionTaken||"",
-    notify_injury:!!(r.notifications&&r.notifications.injury), notify_ems:!!(r.notifications&&r.notifications.ems),
-    notify_police:!!(r.notifications&&r.notifications.police), who_else_notified:r.whoElseNotified||"",
-    force_used:!!r.forceUsed, written_by:r.writtenBy||"", written_by_callsign:r.writtenByCallsign||"",
-    submitted_at:r.submittedAt, reviewed_at:r.reviewedAt, reviewed_by:r.reviewedBy, supervisor_notes:r.supervisorNotes||""};
-}
-function pvFromRow(r){
-  return {id:r.id, vtype:r.vtype||"", call:r.call_id||"", reportId:r.report_id||"", post:r.post||"", occurred:r.occurred,
-    locationInLot:r.location_in_lot||"", plate:r.plate||"", plateState:r.plate_state||"", vehicleDesc:r.vehicle_desc||"",
-    driver:r.driver||"", narrative:r.narrative||"", actionTaken:r.action_taken||"",
-    notifications:{police:!!r.notify_police, propMgmt:!!r.notify_prop_mgmt, tow:!!r.notify_tow},
-    whoElseNotified:r.who_else_notified||"", status:r.status, writtenBy:r.written_by||"",
-    writtenByCallsign:r.written_by_callsign||"", submittedAt:r.submitted_at, reviewedAt:r.reviewed_at,
-    reviewedBy:r.reviewed_by, supervisorNotes:r.supervisor_notes||""};
-}
-function pvToRow(v){
-  return {id:v.id, vtype:v.vtype||"", call_id:v.call||null, report_id:v.reportId||null, post:v.post||"", occurred:v.occurred,
-    location_in_lot:v.locationInLot||"", plate:v.plate||"", plate_state:v.plateState||"", vehicle_desc:v.vehicleDesc||"",
-    driver:v.driver||"", narrative:v.narrative||"", action_taken:v.actionTaken||"",
-    notify_police:!!(v.notifications&&v.notifications.police), notify_prop_mgmt:!!(v.notifications&&v.notifications.propMgmt),
-    notify_tow:!!(v.notifications&&v.notifications.tow), who_else_notified:v.whoElseNotified||"", status:v.status,
-    written_by:v.writtenBy||"", written_by_callsign:v.writtenByCallsign||"", submitted_at:v.submittedAt,
-    reviewed_at:v.reviewedAt, reviewed_by:v.reviewedBy, supervisor_notes:v.supervisorNotes||""};
-}
-function activityFromRow(r){ return {at:r.at, type:r.type, actor:r.actor, text:r.text}; }
-function policeFromRow(r){
-  return {id:r.id, arrivedAt:r.arrived_at, departedAt:r.departed_at, agency:r.agency||"", officer:r.officer||"",
-    post:r.post||"", reason:r.reason||"", notes:r.notes||""};
-}
-function policeToRow(p){
-  return {id:p.id, arrived_at:p.arrivedAt, departed_at:p.departedAt, agency:p.agency||"", officer:p.officer||"",
-    post:p.post||"", reason:p.reason||"", notes:p.notes||""};
-}
-function guardNoteFromRow(r){
-  return {id:r.id, post:r.post||"", text:r.text||"", pinned:!!r.pinned, authorName:r.author||"",
-    authorCallsign:r.author_callsign||"", createdAt:r.created_at, resolved:!!r.resolved,
-    resolvedAt:r.resolved_at, resolvedBy:r.resolved_by};
-}
-function guardNoteToRow(n){
-  return {id:n.id, post:n.post||"", text:n.text||"", pinned:!!n.pinned, author:n.authorName||"",
-    author_callsign:n.authorCallsign||"", created_at:n.createdAt, resolved:!!n.resolved,
-    resolved_at:n.resolvedAt, resolved_by:n.resolvedBy};
-}
+ /* ---------- mappers: DB row (snake_case) <-> app object (camelCase), matching the original STATE shape ---------- */
+ function callFromRow(r){
+      return {id:r.id, code:r.code||"", nature:r.nature||"", priority:r.priority, post:r.post||"", location:r.location||"",
+                  reportingParty:r.reporting_party||"", callback:r.callback||"", receivedVia:r.received_via||"", status:r.status,
+                  createdAt:r.created_at, assignedUnits:r.assigned_units||[], narrativeSupplements:[]};
+ }
+   function callToRow(c){
+        return {id:c.id, code:c.code||"", nature:c.nature||"", priority:c.priority, post:c.post||"", location:c.location||"",
+                    reporting_party:c.reportingParty||"", callback:c.callback||"", received_via:c.receivedVia||"", status:c.status,
+                    created_at:c.createdAt, assigned_units:c.assignedUnits||[]};
+   }
+   function unitFromRow(r){
+        return {callsign:r.callsign, name:r.name, type:r.type, status:r.status, statusSince:r.status_since, post:r.post||"",
+                    shift:r.shift||"", homeCallsign:r.home_callsign||""};
+   }
+   function unitToRow(u){
+        return {callsign:u.callsign, name:u.name, type:u.type, status:u.status, status_since:u.statusSince, post:u.post||"",
+                    shift:u.shift||"", home_callsign:u.homeCallsign||""};
+   }
+   function truckFromRow(r){
+        return {id:r.id, company:r.company||"", driver:r.driver||"", trailer:r.trailer||"", tractor:r.tractor||"",
+                    post:r.post||"", purpose:r.purpose||"", dock:r.dock||"", seal:r.seal||"", bol:r.bol||"", license:r.license||"",
+                    notes:r.notes||"", timeIn:r.time_in, timeOut:r.time_out};
+   }
+   function truckToRow(t){
+        return {id:t.id, company:t.company||"", driver:t.driver||"", trailer:t.trailer||"", tractor:t.tractor||"",
+                    post:t.post||"", purpose:t.purpose||"", dock:t.dock||"", seal:t.seal||"", bol:t.bol||"", license:t.license||"",
+                    notes:t.notes||"", time_in:t.timeIn, time_out:t.timeOut};
+   }
 
-/* ---------- patrol tours: a site (post) can have many tours, each an ordered list of scan
+ function reportFromRow(r){
+      return {id:r.id, type:r.type||"", typeLabel:r.type_label||"", status:r.status, attachToCall:r.attach_to_call||"",
+                  post:r.post||"", occurred:r.occurred, location:r.location||"", subject:r.subject||"", narrative:r.narrative||"",
+                  involvedParties:r.involved_parties||"", witnesses:r.witnesses||"", propertyDamage:r.property_damage||"",
+                  estLoss:r.est_loss||"", actionTaken:r.action_taken||"",
+                  notifications:{injury:!!r.notify_injury, ems:!!r.notify_ems, police:!!r.notify_police},
+                  whoElseNotified:r.who_else_notified||"", forceUsed:!!r.force_used, writtenBy:r.written_by||"",
+                  writtenByCallsign:r.written_by_callsign||"", submittedAt:r.submitted_at, reviewedAt:r.reviewed_at,
+                  reviewedBy:r.reviewed_by, supervisorNotes:r.supervisor_notes||""};
+ }
+   function reportToRow(r){
+        return {id:r.id, type:r.type||"", type_label:r.typeLabel||"", status:r.status, attach_to_call:r.attachToCall||"",
+                    post:r.post||"", occurred:r.occurred, location:r.location||"", subject:r.subject||"", narrative:r.narrative||"",
+                    involved_parties:r.involvedParties||"", witnesses:r.witnesses||"", property_damage:r.propertyDamage||"",
+                    est_loss:r.estLoss||"", action_taken:r.actionTaken||"",
+                    notify_injury:!!(r.notifications&&r.notifications.injury), notify_ems:!!(r.notifications&&r.notifications.ems),
+                    notify_police:!!(r.notifications&&r.notifications.police), who_else_notified:r.whoElseNotified||"",
+                    force_used:!!r.forceUsed, written_by:r.writtenBy||"", written_by_callsign:r.writtenByCallsign||"",
+                    submitted_at:r.submittedAt, reviewed_at:r.reviewedAt, reviewed_by:r.reviewedBy, supervisor_notes:r.supervisorNotes||""};
+   }
+
+ function pvFromRow(r){
+                  return {id:r.id, vtype:r.vtype||"", call:r.call_id||"", reportId:r.report_id||"", post:r.post||"", occurred:r.occurred,
+                              locationInLot:r.location_in_lot||"", plate:r.plate||"", plateState:r.plate_state||"", vehicleDesc:r.vehicle_desc||"",
+                              driver:r.driver||"", narrative:r.narrative||"", actionTaken:r.action_taken||"",
+                              notifications:{police:!!r.notify_police, propMgmt:!!r.notify_prop_mgmt, tow:!!r.notify_tow},
+                              whoElseNotified:r.who_else_notified||"", status:r.status, writtenBy:r.written_by||"",
+                              writtenByCallsign:r.written_by_callsign||"", submittedAt:r.submitted_at, reviewedAt:r.reviewed_at,
+                              reviewedBy:r.reviewed_by, supervisorNotes:r.supervisor_notes||""};
+ }
+   function pvToRow(v){
+        return {id:v.id, vtype:v.vtype||"", call_id:v.call||null, report_id:v.reportId||null, post:v.post||"", occurred:v.occurred,
+                    location_in_lot:v.locationInLot||"", plate:v.plate||"", plate_state:v.plateState||"", vehicle_desc:v.vehicleDesc||"",
+                    driver:v.driver||"", narrative:v.narrative||"", action_taken:v.actionTaken||"",
+                    notify_police:!!(v.notifications&&v.notifications.police), notify_prop_mgmt:!!(v.notifications&&v.notifications.propMgmt),
+                    notify_tow:!!(v.notifications&&v.notifications.tow), who_else_notified:v.whoElseNotified||"", status:v.status,
+                    written_by:v.writtenBy||"", written_by_callsign:v.writtenByCallsign||"", submitted_at:v.submittedAt,
+                    reviewed_at:v.reviewedAt, reviewed_by:v.reviewedBy, supervisor_notes:v.supervisorNotes||""};
+   }
+   function activityFromRow(r){ return {at:r.at, type:r.type, actor:r.actor, text:r.text}; }
+   function policeFromRow(r){
+        return {id:r.id, arrivedAt:r.arrived_at, departedAt:r.departed_at, agency:r.agency||"", officer:r.officer||"",
+                    post:r.post||"", reason:r.reason||"", notes:r.notes||""};
+   }
+   function policeToRow(p){
+        return {id:p.id, arrived_at:p.arrivedAt, departed_at:p.departedAt, agency:p.agency||"", officer:p.officer||"",
+                    post:p.post||"", reason:p.reason||"", notes:p.notes||""};
+   }
+
+ function guardNoteFromRow(r){
+      return {id:r.id, post:r.post||"", text:r.text||"", pinned:!!r.pinned, authorName:r.author||"",
+                  authorCallsign:r.author_callsign||"", createdAt:r.created_at, resolved:!!r.resolved,
+                  resolvedAt:r.resolved_at, resolvedBy:r.resolved_by};
+ }
+   function guardNoteToRow(n){
+        return {id:n.id, post:n.post||"", text:n.text||"", pinned:!!n.pinned, author:n.authorName||"",
+                    author_callsign:n.authorCallsign||"", created_at:n.createdAt, resolved:!!n.resolved,
+                    resolved_at:n.resolvedAt, resolved_by:n.resolvedBy};
+   }
+
+ /* ---------- patrol tours: a site (post) can have many tours, each an ordered list of scan
    points a supervisor builds live by walking the route (see src/part3.js wireTours). ---------- */
-function tourFromRow(r){
-  return {id:r.id, postId:r.post_id, name:r.name, createdBy:r.created_by||"", createdAt:r.created_at, active:!!r.active};
-}
-function tourToRow(t){
-  return {id:t.id, post_id:t.postId, name:t.name, created_by:t.createdBy||"", active: t.active!==false};
-}
-function tourPointFromRow(r){
-  return {id:r.id, tourId:r.tour_id, seq:r.seq, name:r.name||"", lat:r.lat, lng:r.lng,
-    radiusFt:r.radius_ft, createdBy:r.created_by||"", createdAt:r.created_at};
-}
-function tourPointToRow(p){
-  return {id:p.id, tour_id:p.tourId, seq:p.seq||0, name:p.name||"", lat:p.lat, lng:p.lng,
-    radius_ft:p.radiusFt||25, created_by:p.createdBy||""};
-}
-function tourAssignmentFromRow(r){
-  return {id:r.id, tourId:r.tour_id, guardCallsign:r.guard_callsign, shiftDate:r.shift_date,
-    assignedBy:r.assigned_by||"", assignedAt:r.assigned_at};
-}
-function tourAssignmentToRow(a){
-  return {id:a.id, tour_id:a.tourId, guard_callsign:a.guardCallsign, shift_date:a.shiftDate, assigned_by:a.assignedBy||""};
-}
-/* lat/lng/accuracy here is the GUARD's own device location at scan time — kept for reference
+ function tourFromRow(r){
+      return {id:r.id, postId:r.post_id, name:r.name, createdBy:r.created_by||"", createdAt:r.created_at, active:!!r.active};
+ }
+   function tourToRow(t){
+        return {id:t.id, post_id:t.postId, name:t.name, created_by:t.createdBy||"", active: t.active!==false};
+   }
+   function tourPointFromRow(r){
+        return {id:r.id, tourId:r.tour_id, seq:r.seq, name:r.name||"", lat:r.lat, lng:r.lng,
+                    radiusFt:r.radius_ft, createdBy:r.created_by||"", createdAt:r.created_at};
+   }
+   function tourPointToRow(p){
+        return {id:p.id, tour_id:p.tourId, seq:p.seq||0, name:p.name||"", lat:p.lat, lng:p.lng,
+                    radius_ft:p.radiusFt||25, created_by:p.createdBy||""};
+   }
+
+ function tourAssignmentFromRow(r){
+      return {id:r.id, tourId:r.tour_id, guardCallsign:r.guard_callsign, shiftDate:r.shift_date,
+                  assignedBy:r.assigned_by||"", assignedAt:r.assigned_at};
+ }
+   function tourAssignmentToRow(a){
+        return {id:a.id, tour_id:a.tourId, guard_callsign:a.guardCallsign, shift_date:a.shiftDate, assigned_by:a.assignedBy||""};
+   }
+   /* lat/lng/accuracy here is the GUARD's own device location at scan time — kept for reference
    only. It is never compared against the point's radiusFt; the user chose "informational only"
-   over enforcement, so a scan always succeeds regardless of where the guard actually is. */
-function tourScanFromRow(r){
-  return {id:r.id, tourPointId:r.tour_point_id, tourId:r.tour_id, callsign:r.callsign, at:r.at,
-    lat:r.lat, lng:r.lng, accuracy:r.accuracy_m};
-}
-function tourScanToRow(s){
-  return {id:s.id, tour_point_id:s.tourPointId, tour_id:s.tourId, callsign:s.callsign, at:s.at,
-    lat:s.lat, lng:s.lng, accuracy_m:s.accuracy};
-}
+                                over enforcement, so a scan always succeeds regardless of where the guard actually is. */
+ function tourScanFromRow(r){
+      return {id:r.id, tourPointId:r.tour_point_id, tourId:r.tour_id, callsign:r.callsign, at:r.at,
+                  lat:r.lat, lng:r.lng, accuracy:r.accuracy_m};
+ }
+   function tourScanToRow(s){
+        return {id:s.id, tour_point_id:s.tourPointId, tour_id:s.tourId, callsign:s.callsign, at:s.at,
+                    lat:s.lat, lng:s.lng, accuracy_m:s.accuracy};
+   }
+   /* unit_sites: which sites a guard/unit is eligible to work — the assignment pool a supervisor
+   manages from the Units tab. Separate from units.post, which is the ONE site a guard is
+   currently working this shift (self-selectable, or set by a supervisor). */
+ function unitSiteFromRow(r){ return {callsign:r.callsign, postId:r.post_id}; }
 
-/* ---------- load everything into the STATE shape the UI expects ---------- */
-async function loadAllState(){
-  must();
-  var results = await Promise.all([
-    sb.from("users_public").select("*"),
-    sb.from("units").select("*"),
-    sb.from("posts").select("*"),
-    sb.from("checkpoints").select("*"),
-    sb.from("calls").select("*").order("created_at",{ascending:false}),
-    sb.from("call_supplements").select("*").order("at",{ascending:true}),
-    sb.from("chat_channels").select("*"),
-    sb.from("chat_messages").select("*").order("at",{ascending:true}),
-    sb.from("trucks").select("*").order("time_in",{ascending:false}),
-    sb.from("reports").select("*"),
-    sb.from("parking_violations").select("*"),
-    sb.from("police_on_property").select("*").order("arrived_at",{ascending:false}),
-    sb.from("activity_log").select("*").order("at",{ascending:false}).limit(500),
-    sb.from("counters").select("*"),
-    sb.from("checkpoint_scans").select("*").order("at",{ascending:false}).limit(2000),
-    sb.from("guard_locations").select("*"),
-    sb.from("patrol_tours").select("*"),
-    sb.from("patrol_tour_points").select("*").order("seq",{ascending:true}),
-    sb.from("tour_assignments").select("*"),
-    sb.from("tour_point_scans").select("*").order("at",{ascending:false}).limit(2000),
-    sb.from("guard_notes").select("*").order("created_at",{ascending:false})
-  ]);
-  results.forEach(chk);
-  var users = results[0].data, units = results[1].data, posts = results[2].data, checkpoints = results[3].data,
-    calls = results[4].data, supplements = results[5].data, channels = results[6].data, messages = results[7].data,
-    trucks = results[8].data, reports = results[9].data, pvs = results[10].data, police = results[11].data,
-    activity = results[12].data, counters = results[13].data, scans = results[14].data, liveLocs = results[15].data,
-    tours = results[16].data, tourPoints = results[17].data, tourAssignments = results[18].data, tourScans = results[19].data,
-    guardNotes = results[20].data;
+ /* ---------- load everything into the STATE shape the UI expects ---------- */
+ async function loadAllState(){
+      must();
+      var results = await Promise.all([
+             sb.from("users_public").select("*"),
+             sb.from("units").select("*"),
+             sb.from("posts").select("*"),
+             sb.from("checkpoints").select("*"),
+             sb.from("calls").select("*").order("created_at",{ascending:false}),
+             sb.from("call_supplements").select("*").order("at",{ascending:true}),
+             sb.from("chat_channels").select("*"),
+             sb.from("chat_messages").select("*").order("at",{ascending:true}),
+             sb.from("trucks").select("*").order("time_in",{ascending:false}),
+             sb.from("reports").select("*"),
+             sb.from("parking_violations").select("*"),
+             sb.from("police_on_property").select("*").order("arrived_at",{ascending:false}),
+             sb.from("activity_log").select("*").order("at",{ascending:false}).limit(500),
+             sb.from("counters").select("*"),
+             sb.from("checkpoint_scans").select("*").order("at",{ascending:false}).limit(2000),
+             sb.from("guard_locations").select("*"),
+             sb.from("patrol_tours").select("*"),
+             sb.from("patrol_tour_points").select("*").order("seq",{ascending:true}),
+             sb.from("tour_assignments").select("*"),
+             sb.from("tour_point_scans").select("*").order("at",{ascending:false}).limit(2000),
+             sb.from("guard_notes").select("*").order("created_at",{ascending:false}),
+             sb.from("unit_sites").select("*")
+           ]);
+      results.forEach(chk);
+      var users = results[0].data, units = results[1].data, posts = results[2].data, checkpoints = results[3].data,
+             calls = results[4].data, supplements = results[5].data, channels = results[6].data, messages = results[7].data,
+             trucks = results[8].data, reports = results[9].data, pvs = results[10].data, police = results[11].data,
+             activity = results[12].data, counters = results[13].data, scans = results[14].data, liveLocs = results[15].data,
+             tours = results[16].data, tourPoints = results[17].data, tourAssignments = results[18].data, tourScans = results[19].data,
+             guardNotes = results[20].data, unitSiteRows = results[21].data;
 
-  var callsOut = calls.map(callFromRow);
-  supplements.forEach(function(s){
-    var c = callsOut.find(function(x){return x.id===s.call_id;});
-    if(c) c.narrativeSupplements.push({at:s.at, by:s.by, text:s.text});
-  });
-  var postsOut = posts.map(function(p){
-    return {id:p.id, name:p.name, kind:p.kind||"", org:p.org||"", address:p.address||"",
-      checkpoints: checkpoints.filter(function(c){return c.post_id===p.id;}).map(function(c){
-        return {id:c.id, name:c.name, intervalMin:c.interval_min, lastScan:c.last_scan, lastScanBy:c.last_scan_by};
-      })};
-  });
-  var counterMap = {}; counters.forEach(function(c){ counterMap[c.key]=c.value; });
+     var callsOut = calls.map(callFromRow);
+      supplements.forEach(function(s){
+             var c = callsOut.find(function(x){return x.id===s.call_id;});
+             if(c) c.narrativeSupplements.push({at:s.at, by:s.by, text:s.text});
+      });
+      var postsOut = posts.map(function(p){
+             return {id:p.id, name:p.name, kind:p.kind||"", org:p.org||"", address:p.address||"",
+                           checkpoints: checkpoints.filter(function(c){return c.post_id===p.id;}).map(function(c){
+                                      return {id:c.id, name:c.name, intervalMin:c.interval_min, lastScan:c.last_scan, lastScanBy:c.last_scan_by};
+                           })};
+      });
+      var counterMap = {}; counters.forEach(function(c){ counterMap[c.key]=c.value; });
 
-  return {
-    meta: {site:"Ridgecrest Threat Advisory", createdAt:null},
-    users: users.map(function(u){ return {callsign:u.callsign, name:u.name, role:u.role, title:u.title||"",
-      active:u.active, lastSignIn:u.last_sign_in, mustChangePin:u.must_change_pin,
-      assignedPostId:u.assigned_post_id||""}; }),
-    units: units.map(unitFromRow),
-    posts: postsOut,
-    calls: callsOut,
-    callSeq: counterMap.call||0,
-    chat: { channels: channels.map(function(c){return {id:c.id,name:c.name,desc:c.description||""};}), messages: messages.map(function(m){
-      return {channel:m.channel_id, from:m.from_callsign||"", name:m.name||"", bolo:!!m.bolo, text:m.text, at:m.at};
-    })},
-    trucks: trucks.map(truckFromRow),
-    reportSeq: counterMap.report||0,
-    reports: reports.map(reportFromRow),
-    policeOnProperty: police.map(policeFromRow),
-    parkingSeq: counterMap.parking||0,
-    parkingViolations: pvs.map(pvFromRow),
-    guardNotes: guardNotes.map(guardNoteFromRow),
-    activityLog: activity.map(activityFromRow),
-    checkpointScans: scans.map(function(s){ return {id:s.id, checkpointId:s.checkpoint_id, postId:s.post_id,
-      callsign:s.callsign, at:s.at, lat:s.lat, lng:s.lng, accuracy:s.accuracy_m}; }),
-    // Each guard's most recent live GPS ping (one row per callsign — see guard_locations in
-    // schema.sql). Feeds the Live Map tab; checkpointScans above supplies the movement trail.
-    guardLocations: liveLocs.map(function(g){ return {callsign:g.callsign, lat:g.lat, lng:g.lng,
-      accuracy:g.accuracy_m, updatedAt:g.updated_at}; }),
-    // Sites and Patrol Tours are separate: patrolTours/tourPoints are the live-built routes
-    // (src/part3.js renderTours), tourAssignments is the many-to-many guard<->tour link for a
-    // shift date, tourPointScans is the guard's scan history (informational GPS, never enforced).
-    patrolTours: tours.map(tourFromRow),
-    tourPoints: tourPoints.map(tourPointFromRow),
-    tourAssignments: tourAssignments.map(tourAssignmentFromRow),
-    tourPointScans: tourScans.map(tourScanFromRow)
-  };
-}
+     return {
+            meta: {site:"Ridgecrest Threat Advisory", createdAt:null},
+            users: users.map(function(u){ return {callsign:u.callsign, name:u.name, role:u.role, title:u.title||"",
+                                                        active:u.active, lastSignIn:u.last_sign_in, mustChangePin:u.must_change_pin,
+                                                        assignedPostId:u.assigned_post_id||""}; }),
+            units: units.map(unitFromRow),
+            posts: postsOut,
+            calls: callsOut,
+            callSeq: counterMap.call||0,
+            chat: { channels: channels.map(function(c){return {id:c.id,name:c.name,desc:c.description||""};}), messages: messages.map(function(m){
+                     return {channel:m.channel_id, from:m.from_callsign||"", name:m.name||"", bolo:!!m.bolo, text:m.text, at:m.at};
+            })},
+            trucks: trucks.map(truckFromRow),
+            reportSeq: counterMap.report||0,
+            reports: reports.map(reportFromRow),
+            policeOnProperty: police.map(policeFromRow),
+            parkingSeq: counterMap.parking||0,
+            parkingViolations: pvs.map(pvFromRow),
+            guardNotes: guardNotes.map(guardNoteFromRow),
+            activityLog: activity.map(activityFromRow),
 
-/* ---------- auth (PINs are hashed server-side; the client never sees pin_hash) ---------- */
-async function verifyPin(callsign, pin){ must(); return chk(await sb.rpc("verify_pin", {p_callsign:callsign, p_pin:pin})); }
-async function setPin(callsign, newPin){ must(); chk(await sb.rpc("set_pin", {p_callsign:callsign, p_new_pin:newPin})); }
-async function createGuard(callsign, name, pin){ must(); chk(await sb.rpc("create_guard", {p_callsign:callsign, p_name:name, p_pin:pin||"1234"})); }
-async function resetPin(callsign){ must(); chk(await sb.rpc("reset_pin", {p_callsign:callsign})); }
-async function recordSignIn(callsign){ must(); chk(await sb.rpc("record_sign_in", {p_callsign:callsign})); }
-async function nextCounter(key){ must(); return chk(await sb.rpc("next_counter", {counter_key:key})); }
-async function setUserActive(callsign, active){ must(); chk(await sb.rpc("set_user_active", {p_callsign:callsign, p_active:active})); }
-/* postId "" means "every site" (Dispatch/Admin) — stored as null so the assigned_post_id FK stays happy. */
-async function setAssignedPost(callsign, postId){ must(); chk(await sb.rpc("set_assigned_post", {p_callsign:callsign, p_post_id:postId||null})); }
+            checkpointScans: scans.map(function(s){ return {id:s.id, checkpointId:s.checkpoint_id, postId:s.post_id,
+                                                                  callsign:s.callsign, at:s.at, lat:s.lat, lng:s.lng, accuracy:s.accuracy_m}; }),
+            // Each guard's most recent live GPS ping (one row per callsign — see guard_locations in
+            // schema.sql). Feeds the Live Map tab; checkpointScans above supplies the movement trail.
+            guardLocations: liveLocs.map(function(g){ return {callsign:g.callsign, lat:g.lat, lng:g.lng,
+                                                                    accuracy:g.accuracy_m, updatedAt:g.updated_at}; }),
+            // Sites and Patrol Tours are separate: patrolTours/tourPoints are the live-built routes
+            // (src/part3.js renderTours), tourAssignments is the many-to-many guard<->tour link for a
+            // shift date, tourPointScans is the guard's scan history (informational GPS, never enforced).
+            patrolTours: tours.map(tourFromRow),
+            tourPoints: tourPoints.map(tourPointFromRow),
+            tourAssignments: tourAssignments.map(tourAssignmentFromRow),
+            tourPointScans: tourScans.map(tourScanFromRow),
+            // Which sites each guard/unit is eligible to work — see the note on unitSiteFromRow above.
+            unitSites: unitSiteRows.map(unitSiteFromRow)
+     };
+ }
 
-/* ---------- generic row writers ---------- */
-async function insertRow(table, row){ must(); chk(await sb.from(table).insert(row)); }
-async function updateRow(table, idCol, idVal, patch){ must(); chk(await sb.from(table).update(patch).eq(idCol, idVal)); }
-async function deleteRow(table, idCol, idVal){ must(); chk(await sb.from(table).delete().eq(idCol, idVal)); }
-async function upsertRow(table, row){ must(); chk(await sb.from(table).upsert(row)); }
+ /* ---------- auth (PINs are hashed server-side; the client never sees pin_hash) ---------- */
+ async function verifyPin(callsign, pin){ must(); return chk(await sb.rpc("verify_pin", {p_callsign:callsign, p_pin:pin})); }
+   async function setPin(callsign, newPin){ must(); chk(await sb.rpc("set_pin", {p_callsign:callsign, p_new_pin:newPin})); }
+   async function createGuard(callsign, name, pin){ must(); chk(await sb.rpc("create_guard", {p_callsign:callsign, p_name:name, p_pin:pin||"1234"})); }
+   async function resetPin(callsign){ must(); chk(await sb.rpc("reset_pin", {p_callsign:callsign})); }
+   async function recordSignIn(callsign){ must(); chk(await sb.rpc("record_sign_in", {p_callsign:callsign})); }
+   async function nextCounter(key){ must(); return chk(await sb.rpc("next_counter", {counter_key:key})); }
+   async function setUserActive(callsign, active){ must(); chk(await sb.rpc("set_user_active", {p_callsign:callsign, p_active:active})); }
+   /* postId "" means "every site" (Dispatch/Admin) — stored as null so the assigned_post_id FK stays happy. */
+ async function setAssignedPost(callsign, postId){ must(); chk(await sb.rpc("set_assigned_post", {p_callsign:callsign, p_post_id:postId||null})); }
 
-/* ---------- per-entity write helpers used by app.js/part2.js/part3.js ---------- */
-var DB = {
-  configured: CONFIGURED,
-  loadAllState: loadAllState,
-  auth: {verifyPin:verifyPin, setPin:setPin, createGuard:createGuard, resetPin:resetPin, recordSignIn:recordSignIn,
-    setUserActive:setUserActive, setAssignedPost:setAssignedPost},
-  counters: {next:nextCounter},
-  calls: {
-    insert: function(c){ return insertRow("calls", callToRow(c)); },
-    update: function(id, patch){ return updateRow("calls","id",id,patch); },
-    addSupplement: function(callId, supp){ return insertRow("call_supplements", {call_id:callId, at:supp.at, by:supp.by, text:supp.text}); }
-  },
-  units: {
-    insert: function(u){ return insertRow("units", unitToRow(u)); },
-    update: function(callsign, patch){ return updateRow("units","callsign",callsign,patch); },
-    remove: function(callsign){ return deleteRow("units","callsign",callsign); }
-  },
-  checkpoints: {
-    /* loc is {lat,lng,accuracy} from the guard's device GPS, or null if it wasn't available —
-       either way the scan still counts. Updates the checkpoint's "last scanned" fields (fast
-       display) and appends a row to checkpoint_scans (full GPS history for the movement map). */
-    scan: function(cpId, postId, by, loc){
-      var now = new Date().toISOString();
-      return Promise.all([
-        updateRow("checkpoints","id",cpId,{last_scan:now, last_scan_by:by}),
-        insertRow("checkpoint_scans", {checkpoint_id:cpId, post_id:postId, callsign:by, at:now,
-          lat: loc ? loc.lat : null, lng: loc ? loc.lng : null, accuracy_m: loc ? loc.accuracy : null})
-      ]);
-    }
-  },
-  chat: {
-    addChannel: function(ch){ return insertRow("chat_channels", {id:ch.id, name:ch.name, description:ch.desc||""}); },
-    addMessage: function(m){ return insertRow("chat_messages", {channel_id:m.channel, from_callsign:m.from||"", name:m.name||"", bolo:!!m.bolo, text:m.text, at:m.at}); }
-  },
-  /* One row per callsign — upsert overwrites it each ping, so this table always holds only the
-     latest known position (checkpoint_scans keeps the permanent history). Feeds the Live Map tab. */
-  locations: {
-    upsert: function(callsign, loc){ return upsertRow("guard_locations", {callsign:callsign, lat:loc.lat, lng:loc.lng,
-      accuracy_m:loc.accuracy, updated_at:new Date().toISOString()}); }
-  },
-  trucks: {
-    insert: function(t){ return insertRow("trucks", truckToRow(t)); },
-    checkOut: function(id, timeOut){ return updateRow("trucks","id",id,{time_out:timeOut}); }
-  },
-  reports: {
-    insert: function(r){ return insertRow("reports", reportToRow(r)); },
-    update: function(id, patch){ return updateRow("reports","id",id,patch); }
-  },
-  parking: {
-    insert: function(v){ return insertRow("parking_violations", pvToRow(v)); },
-    update: function(id, patch){ return updateRow("parking_violations","id",id,patch); }
-  },
-  police: {
-    insert: function(p){ return insertRow("police_on_property", policeToRow(p)); },
-    depart: function(id, departedAt){ return updateRow("police_on_property","id",id,{departed_at:departedAt}); }
-  },
-  guardNotes: {
-    insert: function(n){ return insertRow("guard_notes", guardNoteToRow(n)); },
-    setResolved: function(id, resolved, resolvedAt, resolvedBy){
-      return updateRow("guard_notes","id",id,{resolved:!!resolved, resolved_at:resolvedAt, resolved_by:resolvedBy});
-    },
-    setPinned: function(id, pinned){ return updateRow("guard_notes","id",id,{pinned:!!pinned}); }
-  },
-  activity: {
-    insert: function(entry){ return insertRow("activity_log", {at:entry.at, type:entry.type, actor:entry.actor, text:entry.text}); }
-  },
-  /* Sites vs. Patrol Tours: a site (post) can have any number of tours. A supervisor builds a
-     tour live (create, then addPoint per GPS tap while walking); assign/unassign links a guard
-     to a tour for one shift date (many-to-many — a guard can hold several at once); scanPoint
-     records a guard's own GPS at scan time for reference only, never validated against radiusFt. */
-  tours: {
-    create: function(t){ return insertRow("patrol_tours", tourToRow(t)); },
-    setActive: function(id, active){ return updateRow("patrol_tours","id",id,{active:!!active}); },
-    remove: function(id){ return deleteRow("patrol_tours","id",id); },
-    addPoint: function(p){ return insertRow("patrol_tour_points", tourPointToRow(p)); },
-    removePoint: function(id){ return deleteRow("patrol_tour_points","id",id); },
-    assign: function(a){ return insertRow("tour_assignments", tourAssignmentToRow(a)); },
-    unassign: function(id){ return deleteRow("tour_assignments","id",id); },
-    scanPoint: function(s){ return insertRow("tour_point_scans", tourScanToRow(s)); }
-  },
+ /* ---------- generic row writers ---------- */
+ async function insertRow(table, row){ must(); chk(await sb.from(table).insert(row)); }
+   async function updateRow(table, idCol, idVal, patch){ must(); chk(await sb.from(table).update(patch).eq(idCol, idVal)); }
+   async function deleteRow(table, idCol, idVal){ must(); chk(await sb.from(table).delete().eq(idCol, idVal)); }
+   async function upsertRow(table, row){ must(); chk(await sb.from(table).upsert(row)); }
+   /* Deletes rows matching every key/value pair given — used for unit_sites, whose primary key
+   is the (callsign, post_id) pair rather than a single id column like every other table here. */
+ async function deleteMatch(table, match){
+      must();
+      var q = sb.from(table).delete();
+      Object.keys(match).forEach(function(k){ q = q.eq(k, match[k]); });
+      chk(await q);
+ }
+
+ /* ---------- per-entity write helpers used by app.js/part2.js/part3.js ---------- */
+ var DB = {
+      configured: CONFIGURED,
+      loadAllState: loadAllState,
+      auth: {verifyPin:verifyPin, setPin:setPin, createGuard:createGuard, resetPin:resetPin, recordSignIn:recordSignIn,
+                 setUserActive:setUserActive, setAssignedPost:setAssignedPost},
+      counters: {next:nextCounter},
+      calls: {
+             insert: function(c){ return insertRow("calls", callToRow(c)); },
+             update: function(id, patch){ return updateRow("calls","id",id,patch); },
+             addSupplement: function(callId, supp){ return insertRow("call_supplements", {call_id:callId, at:supp.at, by:supp.by, text:supp.text}); }
+      },
+      units: {
+             insert: function(u){ return insertRow("units", unitToRow(u)); },
+             update: function(callsign, patch){ return updateRow("units","callsign",callsign,patch); },
+             remove: function(callsign){ return deleteRow("units","callsign",callsign); }
+      },
+      /* Site directory (posts). Adding a new site here is what src/part2.js renderSites/wireSites'
+      "+ Add site" button calls; posts already had an anon_all RLS policy from schema.sql, same as
+      every other non-locked-down table, so no new RPC was needed for this. */
+      posts: {
+             insert: function(p){ return insertRow("posts", {id:p.id, name:p.name||"", kind:p.kind||"", org:p.org||"", address:p.address||""}); },
+             update: function(id, patch){ return updateRow("posts","id",id,patch); },
+             remove: function(id){ return deleteRow("posts","id",id); }
+      },
+      /* Many-to-many pool of sites a guard/unit can be posted to (src/part2.js renderUnits'
+      "Assigned Sites" multi-select). units.post — the ONE site for the current shift — is still
+      written through DB.units.update above. */
+      unitSites: {
+             assign: function(callsign, postId){ return insertRow("unit_sites", {callsign:callsign, post_id:postId}); },
+             unassign: function(callsign, postId){ return deleteMatch("unit_sites", {callsign:callsign, post_id:postId}); }
+      },
+
+      checkpoints: {
+             /* loc is {lat,lng,accuracy} from the guard's device GPS, or null if it wasn't available —
+        either way the scan still counts. Updates the checkpoint's "last scanned" fields (fast
+             display) and appends a row to checkpoint_scans (full GPS history for the movement map). */
+        scan: function(cpId, postId, by, loc){
+                 var now = new Date().toISOString();
+                 return Promise.all([
+                            updateRow("checkpoints","id",cpId,{last_scan:now, last_scan_by:by}),
+                            insertRow("checkpoint_scans", {checkpoint_id:cpId, post_id:postId, callsign:by, at:now,
+                                                                     lat: loc ? loc.lat : null, lng: loc ? loc.lng : null, accuracy_m: loc ? loc.accuracy : null})
+                          ]);
+        }
+      },
+      chat: {
+             addChannel: function(ch){ return insertRow("chat_channels", {id:ch.id, name:ch.name, description:ch.desc||""}); },
+             addMessage: function(m){ return insertRow("chat_messages", {channel_id:m.channel, from_callsign:m.from||"", name:m.name||"", bolo:!!m.bolo, text:m.text, at:m.at}); }
+      },
+      /* One row per callsign — upsert overwrites it each ping, so this table always holds only the
+      latest known position (checkpoint_scans keeps the permanent history). Feeds the Live Map tab. */
+      locations: {
+             upsert: function(callsign, loc){ return upsertRow("guard_locations", {callsign:callsign, lat:loc.lat, lng:loc.lng,
+                                                                                         accuracy_m:loc.accuracy, updated_at:new Date().toISOString()}); }
+      },
+      trucks: {
+             insert: function(t){ return insertRow("trucks", truckToRow(t)); },
+             checkOut: function(id, timeOut){ return updateRow("trucks","id",id,{time_out:timeOut}); }
+      },
+      reports: {
+             insert: function(r){ return insertRow("reports", reportToRow(r)); },
+             update: function(id, patch){ return updateRow("reports","id",id,patch); }
+      },
+
+      parking: {
+             insert: function(v){ return insertRow("parking_violations", pvToRow(v)); },
+             update: function(id, patch){ return updateRow("parking_violations","id",id,patch); }
+                },
+      police: {
+             insert: function(p){ return insertRow("police_on_property", policeToRow(p)); },
+             depart: function(id, departedAt){ return updateRow("police_on_property","id",id,{departed_at:departedAt}); }
+                                                           },
+      guardNotes: {
+             insert: function(n){ return insertRow("guard_notes", guardNoteToRow(n)); },
+             setResolved: function(id, resolved, resolvedAt, resolvedBy){
+                      return updateRow("guard_notes","id",id,{resolved:!!resolved, resolved_at:resolvedAt, resolved_by:resolvedBy});
+             },
+             setPinned: function(id, pinned){ return updateRow("guard_notes","id",id,{pinned:!!pinned}); }
+      },
+      activity: {
+             insert: function(entry){ return insertRow("activity_log", {at:entry.at, type:entry.type, actor:entry.actor, text:entry.text}); }
+      },
+      /* Sites vs. Patrol Tours: a site (post) can have any number of tours. A supervisor builds a
+      tour live (create, then addPoint per GPS tap while walking); assign/unassign links a guard
+      to a tour for one shift date (many-to-many — a guard can hold several at once); scanPoint
+      records a guard's own GPS at scan time for reference only, never validated against radiusFt. */
+      tours: {
+             create: function(t){ return insertRow("patrol_tours", tourToRow(t)); },
+             setActive: function(id, active){ return updateRow("patrol_tours","id",id,{active:!!active}); },
+             remove: function(id){ return deleteRow("patrol_tours","id",id); },
+             addPoint: function(p){ return insertRow("patrol_tour_points", tourPointToRow(p)); },
+             removePoint: function(id){ return deleteRow("patrol_tour_points","id",id); },
+             assign: function(a){ return insertRow("tour_assignments", tourAssignmentToRow(a)); },
+             unassign: function(id){ return deleteRow("tour_assignments","id",id); },
+             scanPoint: function(s){ return insertRow("tour_point_scans", tourScanToRow(s)); }
+      },
+
   /* Subscribe to live changes from other guards' sessions. onChange is called with the
-     table name whenever a row changes; callers typically refetch that slice and re-render. */
-  subscribeRealtime: function(onChange){
-    if(!sb) return null;
-    var tables = ["units","calls","call_supplements","chat_messages","trucks","reports","parking_violations","police_on_property","guard_notes","checkpoints","activity_log","checkpoint_scans","guard_locations",
-      "patrol_tours","patrol_tour_points","tour_assignments","tour_point_scans"];
-    var channel = sb.channel("cad-live");
-    tables.forEach(function(t){
-      channel.on("postgres_changes", {event:"*", schema:"public", table:t}, function(payload){ onChange(t, payload); });
-    });
-    channel.subscribe();
-    return channel;
-  }
-};
+      table name whenever a row changes; callers typically refetch that slice and re-render. */
+      subscribeRealtime: function(onChange){
+             if(!sb) return null;
+             var tables = ["units","posts","unit_sites","calls","call_supplements","chat_messages","trucks","reports","parking_violations","police_on_property","guard_notes","checkpoints","activity_log","checkpoint_scans","guard_locations",
+                                 "patrol_tours","patrol_tour_points","tour_assignments","tour_point_scans"];
+             var channel = sb.channel("cad-live");
+             tables.forEach(function(t){
+                      channel.on("postgres_changes", {event:"*", schema:"public", table:t}, function(payload){ onChange(t, payload); });
+             });
+             channel.subscribe();
+             return channel;
+      }
+ };
 
-window.__CAD_DB = DB;
+ window.__CAD_DB = DB;
 })();
