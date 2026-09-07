@@ -10,16 +10,16 @@ function renderParking(){
   html += '<div class="two-col">';
   html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">New Violation</div><form id="parkForm">'+
     '<label class="field"><span class="lbl">Violation Type <span class="req">*</span></span><select name="vtype" required><option value="">Select type…</option>'+
-      C.VIOLATION_TYPES.map(function(v){return '<option value="'+v[0]+'">'+escapeHtml(v[1])+'</option>';}).join("")+
+    C.VIOLATION_TYPES.map(function(v){return '<option value="'+v[0]+'">'+escapeHtml(v[1])+'</option>';}).join("")+
     '</select></label>'+
     '<label class="field"><span class="lbl">Attach to Call</span><select name="call"><option value="">Standalone — not tied to a call</option>'+
-      STATE.calls.filter(function(c){return c.status!=="CLEARED";}).map(function(c){return '<option value="'+c.id+'">#'+c.id+' — '+escapeHtml(c.nature||c.code)+'</option>';}).join("")+
+    STATE.calls.filter(function(c){return c.status!=="CLEARED";}).map(function(c){return '<option value="'+c.id+'">#'+c.id+' — '+escapeHtml(c.nature||c.code)+'</option>';}).join("")+
     '</select></label>'+
     '<label class="field"><span class="lbl">Attach to Report</span><select name="report"><option value="">Not linked to a report</option>'+
-      STATE.reports.map(function(r){return '<option value="'+r.id+'">'+r.id+' — '+escapeHtml(r.subject)+'</option>';}).join("")+
+    STATE.reports.map(function(r){return '<option value="'+r.id+'">'+r.id+' — '+escapeHtml(r.subject)+'</option>';}).join("")+
     '</select></label>'+
     '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+
-      STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+
+    STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+
     '</select></label>'+
     '<label class="field"><span class="lbl">Occurred <span class="req">*</span></span><input type="datetime-local" name="occurred" required value="'+nowLocalInput()+'"></label>'+
     '<label class="field"><span class="lbl">Location in Lot</span><input type="text" name="locationInLot" placeholder="Row C, spot 14, near Dock 4…"></label>'+
@@ -36,9 +36,9 @@ function renderParking(){
     '<div style="display:flex;gap:8px;margin-top:10px;"><button type="submit" class="btn primary" style="flex:1;">Submit for review</button><button type="button" class="btn" data-action="parkDraft">Save draft</button></div>'+
     '</form></div>';
 
-  html += '<div class="card"><div class="tabs">'+
-    ["all","mine","awaiting","returned","approved","closed"].map(function(v){return '<button class="'+((uiState.parkFilter||"all")===v?"active":"")+'" data-parkfilter="'+v+'">'+v[0].toUpperCase()+v.slice(1)+'</button>';}).join("")+
-    '</div>';
+html += '<div class="card"><div class="tabs">'+
+  ["all","mine","awaiting","returned","approved","closed"].map(function(v){return '<button class="'+((uiState.parkFilter||"all")===v?"active":"")+'" data-parkfilter="'+v+'">'+v[0].toUpperCase()+v.slice(1)+'</button>';}).join("")+
+  '</div>';
   var filt = uiState.parkFilter||"all";
   var shown = list.filter(function(v){
     if(filt==="mine") return v.writtenByCallsign===session.callsign;
@@ -61,18 +61,19 @@ function renderParking(){
   }
   html += '</div></div>';
 
-  if(uiState.openParkId){
-    var pv = STATE.parkingViolations.find(function(v){return v.id===uiState.openParkId;});
-    if(pv) html += renderParkModal(pv);
-  }
+if(uiState.openParkId){
+  var pv = STATE.parkingViolations.find(function(v){return v.id===uiState.openParkId;});
+  if(pv) html += renderParkModal(pv);
+}
   return html;
 }
 function nowLocalInput(){
   var d = new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
   return d.toISOString().slice(0,16);
 }
+
 function renderParkModal(v){
-  var C = window.__CAD;
+var C = window.__CAD;
   var typeLabel = (C.VIOLATION_TYPES.find(function(t){return t[0]===v.vtype;})||["",v.vtype])[1];
   var st = v.status==="OPEN" ? "SUBMITTED" : v.status;
   var canReview = session.role==="SUPV" && (v.status==="SUBMITTED" || v.status==="OPEN");
@@ -83,19 +84,19 @@ function renderParkModal(v){
     '<div class="rtaid">'+escapeHtml(v.id)+'</div> <span class="pill '+(st==="APPROVED"?"ok":st==="RETURNED"?"destructive":st==="CLOSED"?"muted":"warn")+'">'+st+'</span>'+
     '<h2>'+escapeHtml(typeLabel)+'</h2>'+
     '<div class="kv-grid">'+
-      '<div><div class="k">Written by</div><div class="v">'+escapeHtml(v.writtenBy)+'</div></div>'+
-      '<div><div class="k">Occurred</div><div class="v">'+fmtDT(v.occurred)+'</div></div>'+
-      '<div><div class="k">Post</div><div class="v">'+escapeHtml(v.post||"—")+'</div></div>'+
-      '<div><div class="k">Plate</div><div class="v">'+escapeHtml(v.plate||"—")+' '+escapeHtml(v.plateState||"")+'</div></div>'+
-      '<div><div class="k">Vehicle</div><div class="v">'+escapeHtml(v.vehicleDesc||"—")+'</div></div>'+
-      '<div><div class="k">Linked Report</div><div class="v">'+(linkedReport?escapeHtml(linkedReport.id+" — "+linkedReport.subject):"—")+'</div></div>'+
-      (v.reviewedAt? '<div><div class="k">Reviewed</div><div class="v">'+fmtDT(v.reviewedAt)+' by '+escapeHtml(v.reviewedBy)+'</div></div>' : '')+
+    '<div><div class="k">Written by</div><div class="v">'+escapeHtml(v.writtenBy)+'</div></div>'+
+    '<div><div class="k">Occurred</div><div class="v">'+fmtDT(v.occurred)+'</div></div>'+
+    '<div><div class="k">Post</div><div class="v">'+escapeHtml(v.post||"—")+'</div></div>'+
+    '<div><div class="k">Plate</div><div class="v">'+escapeHtml(v.plate||"—")+' '+escapeHtml(v.plateState||"")+'</div></div>'+
+    '<div><div class="k">Vehicle</div><div class="v">'+escapeHtml(v.vehicleDesc||"—")+'</div></div>'+
+    '<div><div class="k">Linked Report</div><div class="v">'+(linkedReport?escapeHtml(linkedReport.id+" — "+linkedReport.subject):"—")+'</div></div>'+
+    (v.reviewedAt? '<div><div class="k">Reviewed</div><div class="v">'+fmtDT(v.reviewedAt)+' by '+escapeHtml(v.reviewedBy)+'</div></div>' : '')+
     '</div>'+
     '<div class="field-block"><div class="k">Narrative</div><div class="v">'+nl2br(v.narrative||"—")+'</div></div>'+
     '<div class="field-block"><div class="k">Action Taken</div><div class="v">'+escapeHtml(v.actionTaken||"—")+'</div></div>'+
     '<div class="field-block"><div class="k">Notifications</div><div class="v">'+
-      ([v.notifications.police?"Police":null, v.notifications.propMgmt?"Property Mgmt":null, v.notifications.tow?"Tow Co.":null].filter(Boolean).join(", ")||"None")+
-      (v.whoElseNotified?" · "+escapeHtml(v.whoElseNotified):"")+
+    ([v.notifications.police?"Police":null, v.notifications.propMgmt?"Property Mgmt":null, v.notifications.tow?"Tow Co.":null].filter(Boolean).join(", ")||"None")+
+    (v.whoElseNotified?" · "+escapeHtml(v.whoElseNotified):"")+
     '</div></div>'+
     (v.supervisorNotes? '<div class="field-block"><div class="k">Supervisor Notes</div><div class="v">'+nl2br(v.supervisorNotes)+'</div></div>':'')+
     (canClose? '<div style="margin:14px 0;"><button class="btn sm ok" data-action="closeParkViolation" data-id="'+v.id+'">Mark closed</button></div>' : '')+
@@ -103,9 +104,10 @@ function renderParkModal(v){
       '<div class="divider"></div><div style="font-weight:700;margin-bottom:8px;">Supervisor Review</div>'+
       '<textarea id="parkReviewNotes" rows="2" placeholder="Notes for the writer. Required when returning a violation."></textarea>'+
       '<div style="display:flex;gap:8px;margin-top:8px;"><button class="btn ok" style="flex:1;" data-action="approveParking" data-id="'+v.id+'">✓ Approve</button><button class="btn" data-action="returnParking" data-id="'+v.id+'">↩ Return for corrections</button></div>'
-    ) : '')+
-  '</div></div>';
+      ) : '')+
+    '</div></div>';
 }
+
 function wireParking(){
   var form = document.getElementById("parkForm");
   async function submitParking(status){
@@ -137,7 +139,8 @@ function wireParking(){
   document.querySelectorAll("[data-open-park]").forEach(function(el){ el.addEventListener("click", function(){ uiState.openParkId = el.getAttribute("data-open-park"); render(); }); });
   var bd = document.querySelector("[data-close-park]");
   if(bd) bd.addEventListener("click", function(){ uiState.openParkId=null; render(); });
-  var cbtn = document.querySelector('[data-action="closeParkModal"]');
+
+var cbtn = document.querySelector('[data-action="closeParkModal"]');
   if(cbtn) cbtn.addEventListener("click", function(){ uiState.openParkId=null; render(); });
   var closeViol = document.querySelector('[data-action="closeParkViolation"]');
   if(closeViol) closeViol.addEventListener("click", function(){
@@ -166,13 +169,14 @@ function wireParking(){
   var csvBtn = document.querySelector('[data-action="parkingCsv"]');
   if(csvBtn) csvBtn.addEventListener("click", function(){ downloadCsv("parking_violations.csv", parkingToCsv()); });
 }
+
 function parkingToCsv(){
   var rows = [["ID","Type","Status","Occurred","Post","Linked Report","Plate","State","Vehicle","Driver","Action Taken","Written By","Narrative"]];
   STATE.parkingViolations.forEach(function(v){
     var typeLabel = (window.__CAD.VIOLATION_TYPES.find(function(t){return t[0]===v.vtype;})||["",v.vtype])[1];
     rows.push([v.id, typeLabel, v.status, v.occurred, v.post, v.reportId||"", v.plate, v.plateState, v.vehicleDesc, v.driver, v.actionTaken, v.writtenBy, v.narrative]);
   });
-  return rows;
+    return rows;
 }
 function downloadCsv(filename, rows){
   var csv = rows.map(function(r){ return r.map(function(c){ c=(c==null?"":String(c)); if(/[",\n]/.test(c)) c='"'+c.replace(/"/g,'""')+'"'; return c; }).join(","); }).join("\r\n");
@@ -192,7 +196,7 @@ function renderReports(){
     '<button class="'+(tab==="incident"?"active":"")+'" data-reptab="incident">Incident Reports '+STATE.reports.length+'</button>'+
     '<button class="'+(tab==="police"?"active":"")+'" data-reptab="police">Police On Property '+STATE.policeOnProperty.filter(function(p){return !p.departedAt;}).length+' now</button>'+
     '<button class="'+(tab==="self"?"active":"")+'" data-reptab="self">Self-Initiated Call</button>'+
-  '</div>';
+    '</div>';
   if(tab==="police"){ html += renderPoliceOnProperty(); return html; }
   if(tab==="self"){
     html += '<div class="empty-state">Nothing logged in this tab yet.</div>';
@@ -201,12 +205,12 @@ function renderReports(){
   html += '<div class="two-col">';
   html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">New Incident Report</div><form id="reportForm">'+
     '<label class="field"><span class="lbl">Report Type <span class="req">*</span></span><select name="rtype" required>'+
-      C.REPORT_TYPES.map(function(r){return '<option value="'+r[0]+'">'+escapeHtml(r[1])+'</option>';}).join("")+
+    C.REPORT_TYPES.map(function(r){return '<option value="'+r[0]+'">'+escapeHtml(r[1])+'</option>';}).join("")+
     '</select></label>'+
     '<label class="field"><span class="lbl">Attach to Call</span><select name="call"><option value="">Standalone — not tied to a call</option>'+
-      STATE.calls.filter(function(c){return c.status!=="CLEARED";}).map(function(c){return '<option value="'+c.id+'">#'+c.id+'</option>';}).join("")+
+    STATE.calls.filter(function(c){return c.status!=="CLEARED";}).map(function(c){return '<option value="'+c.id+'">#'+c.id+'</option>';}).join("")+
     '</select></label>'+
-    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
+    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
     '<label class="field"><span class="lbl">Occurred <span class="req">*</span></span><input type="datetime-local" name="occurred" required value="'+nowLocalInput()+'"></label>'+
     '<label class="field"><span class="lbl">Location on Property</span><input type="text" name="location" placeholder="Dock 4, west fence line, lobby…"></label>'+
     '<label class="field"><span class="lbl">Subject — one line <span class="req">*</span></span><input type="text" name="subject" required placeholder="Trespass warning issued at north gate"></label>'+
@@ -223,11 +227,11 @@ function renderReports(){
     '<label class="chk-row"><input type="checkbox" name="force"> Force was used — physical contact, restraint or detention</label>'+
     '<div style="display:flex;gap:8px;margin-top:10px;"><button type="submit" class="btn primary" style="flex:1;">Submit for review</button><button type="button" class="btn" data-action="reportDraft">Save draft</button></div>'+
     '<div class="small-muted" style="margin-top:8px;">Your callsign and name are stamped on the report by the server. A submitted report locks until a supervisor approves it or returns it for corrections.</div>'+
-  '</form></div>';
+    '</form></div>';
 
-  html += '<div class="card"><div class="tabs">'+
-    ["all","mine","awaiting","returned","approved"].map(function(f){return '<button class="'+((uiState.reportsFilter||"all")===f?"active":"")+'" data-repfilter="'+f+'">'+f[0].toUpperCase()+f.slice(1)+'</button>';}).join("")+
-    '</div>';
+html += '<div class="card"><div class="tabs">'+
+  ["all","mine","awaiting","returned","approved"].map(function(f){return '<button class="'+((uiState.reportsFilter||"all")===f?"active":"")+'" data-repfilter="'+f+'">'+f[0].toUpperCase()+f.slice(1)+'</button>';}).join("")+
+  '</div>';
   var filt = uiState.reportsFilter||"all";
   var list = STATE.reports.filter(function(r){
     if(filt==="mine") return r.writtenByCallsign===session.callsign;
@@ -244,12 +248,13 @@ function renderReports(){
   }).join("");
   html += '</div></div>';
 
-  if(uiState.openReportId){
-    var rep = STATE.reports.find(function(r){return r.id===uiState.openReportId;});
-    if(rep) html += renderReportModal(rep);
-  }
+if(uiState.openReportId){
+  var rep = STATE.reports.find(function(r){return r.id===uiState.openReportId;});
+  if(rep) html += renderReportModal(rep);
+}
   return html;
 }
+
 function renderReportModal(r){
   var canReview = session.role==="SUPV" && r.status==="SUBMITTED";
   return '<div class="modal-backdrop" data-close-report="1"><div class="modal" onclick="event.stopPropagation()">'+
@@ -257,13 +262,13 @@ function renderReportModal(r){
     '<div class="rtaid">'+r.id+'</div> <span class="pill '+(r.status==="APPROVED"?"ok":r.status==="RETURNED"?"destructive":"warn")+'">'+r.status+'</span> <span class="pill muted">'+escapeHtml(r.typeLabel)+'</span>'+
     '<h2>'+escapeHtml(r.subject)+'</h2>'+
     '<div class="kv-grid">'+
-      '<div><div class="k">Written by</div><div class="v">'+escapeHtml(r.writtenBy)+' ('+escapeHtml(r.writtenByCallsign)+')</div></div>'+
-      '<div><div class="k">Occurred</div><div class="v">'+fmtDT(r.occurred)+'</div></div>'+
-      '<div><div class="k">Post</div><div class="v">'+escapeHtml(r.post||"—")+'</div></div>'+
-      '<div><div class="k">Location</div><div class="v">'+escapeHtml(r.location||"—")+'</div></div>'+
-      '<div><div class="k">Linked Call</div><div class="v">'+escapeHtml(r.attachToCall||"Standalone")+'</div></div>'+
-      '<div><div class="k">Submitted</div><div class="v">'+fmtDT(r.submittedAt)+'</div></div>'+
-      (r.reviewedAt? '<div><div class="k">Reviewed</div><div class="v">'+fmtDT(r.reviewedAt)+' by '+escapeHtml(r.reviewedBy)+'</div></div>' : '')+
+    '<div><div class="k">Written by</div><div class="v">'+escapeHtml(r.writtenBy)+' ('+escapeHtml(r.writtenByCallsign)+')</div></div>'+
+    '<div><div class="k">Occurred</div><div class="v">'+fmtDT(r.occurred)+'</div></div>'+
+    '<div><div class="k">Post</div><div class="v">'+escapeHtml(r.post||"—")+'</div></div>'+
+    '<div><div class="k">Location</div><div class="v">'+escapeHtml(r.location||"—")+'</div></div>'+
+    '<div><div class="k">Linked Call</div><div class="v">'+escapeHtml(r.attachToCall||"Standalone")+'</div></div>'+
+    '<div><div class="k">Submitted</div><div class="v">'+fmtDT(r.submittedAt)+'</div></div>'+
+    (r.reviewedAt? '<div><div class="k">Reviewed</div><div class="v">'+fmtDT(r.reviewedAt)+' by '+escapeHtml(r.reviewedBy)+'</div></div>' : '')+
     '</div>'+
     '<div class="field-block"><div class="k">Narrative</div><div class="v">'+nl2br(r.narrative)+'</div></div>'+
     (r.involvedParties? '<div class="field-block"><div class="k">Involved Parties</div><div class="v">'+nl2br(r.involvedParties)+'</div></div>':'')+
@@ -275,9 +280,10 @@ function renderReportModal(r){
       '<div class="divider"></div><div style="font-weight:700;margin-bottom:8px;">Supervisor Review</div>'+
       '<textarea id="reviewNotes" rows="2" placeholder="Notes for the writer. Required when returning a report."></textarea>'+
       '<div style="display:flex;gap:8px;margin-top:8px;"><button class="btn ok" style="flex:1;" data-action="approveReport" data-id="'+r.id+'">✓ Approve</button><button class="btn" data-action="returnReport" data-id="'+r.id+'">↩ Return for corrections</button></div>'
-    ) : '')+
-  '</div></div>';
+      ) : '')+
+    '</div></div>';
 }
+
 function wireReports(){
   document.querySelectorAll("[data-reptab]").forEach(function(b){ b.addEventListener("click", function(){ uiState.reportsTab=b.getAttribute("data-reptab"); render(); }); });
   document.querySelectorAll("[data-repfilter]").forEach(function(b){ b.addEventListener("click", function(){ uiState.reportsFilter=b.getAttribute("data-repfilter"); render(); }); });
@@ -311,7 +317,8 @@ function wireReports(){
   var draftBtn = document.querySelector('[data-action="reportDraft"]');
   if(draftBtn) draftBtn.addEventListener("click", function(){ submitReport("DRAFT"); });
   document.querySelectorAll("[data-open-report]").forEach(function(el){ el.addEventListener("click", function(){ uiState.openReportId = el.getAttribute("data-open-report"); render(); }); });
-  var bd = document.querySelector("[data-close-report]");
+
+var bd = document.querySelector("[data-close-report]");
   if(bd) bd.addEventListener("click", function(){ uiState.openReportId=null; render(); });
   var cbtn = document.querySelector('[data-action="closeReportModal"]');
   if(cbtn) cbtn.addEventListener("click", function(){ uiState.openReportId=null; render(); });
@@ -370,12 +377,13 @@ function renderPoliceOnProperty(){
         '<div class="subj">'+escapeHtml(p.reason)+'</div>'+
         '<div class="meta">Arrived '+fmtShort(p.arrivedAt)+(p.post?' · '+escapeHtml(p.post):'')+(p.notes?' · '+escapeHtml(p.notes):'')+'</div>'+
         (!p.departedAt? '<button class="btn sm" style="margin-top:6px;" data-police-depart="'+p.id+'">Log departure</button>' : '<div class="small-muted">On property '+Math.round((new Date(p.departedAt)-new Date(p.arrivedAt))/60000)+'m</div>')+
-      '</div>';
+        '</div>';
     }).join("");
   }
   html += '</div></div>';
   return html;
 }
+
 function wirePoliceOnProperty(){
   document.querySelectorAll("[data-policeview]").forEach(function(b){ b.addEventListener("click", function(){ uiState.policeView=b.getAttribute("data-policeview"); render(); }); });
   var form = document.getElementById("policeForm");
@@ -385,8 +393,8 @@ function wirePoliceOnProperty(){
     if(!fd.get("agency") || !fd.get("reason")){ toast("Agency and reason on property are required."); return; }
     var postId = fd.get("post"); var post = STATE.posts.find(function(x){return x.id===postId;});
     var p = {id:uid("police"), agency:fd.get("agency"), officer:fd.get("officer")||"",
-      post: postId?(postId+" "+(post?post.name:"")):"", reason:fd.get("reason"), notes:fd.get("notes")||"",
-      arrivedAt:nowIso(), departedAt:null};
+             post: postId?(postId+" "+(post?post.name:"")):"", reason:fd.get("reason"), notes:fd.get("notes")||"",
+             arrivedAt:nowIso(), departedAt:null};
     STATE.policeOnProperty.unshift(p);
     logActivity("POLICE", session.callsign, "Police on property — "+p.agency+(p.officer?" ("+p.officer+")":"")+" — "+p.reason);
     form.reset();
@@ -409,7 +417,7 @@ function renderGuardNotes(){
   var view = uiState.guardNotesFilter||"open";
   var list = view==="open"?open:view==="resolved"?STATE.guardNotes.filter(function(n){return n.resolved;}):STATE.guardNotes;
   // Pinned notes float to the top within whatever list is showing, newest first within each group.
-  list = list.slice().sort(function(a,b){ if(!!b.pinned - !!a.pinned !== 0) return (b.pinned?1:0)-(a.pinned?1:0); return new Date(b.createdAt)-new Date(a.createdAt); });
+list = list.slice().sort(function(a,b){ if(!!b.pinned - !!a.pinned !== 0) return (b.pinned?1:0)-(a.pinned?1:0); return new Date(b.createdAt)-new Date(a.createdAt); });
   var html = '<div class="section-head"><h2>Guard Notes</h2><span class="meta">'+open.length+' open</span></div>';
   html += '<div class="two-col">';
   html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">New Note</div><form id="guardNoteForm">'+
@@ -426,17 +434,18 @@ function renderGuardNotes(){
         '<span class="pill '+(n.resolved?"muted":"ok")+'">'+(n.resolved?"RESOLVED":"OPEN")+'</span></div>'+
         '<div class="subj">'+nl2br(n.text)+'</div>'+
         '<div class="meta">'+escapeHtml(n.authorName)+' · '+escapeHtml(n.authorCallsign)+' · '+fmtShort(n.createdAt)+
-          (n.resolved? ' · resolved by '+escapeHtml(n.resolvedBy||"")+' '+fmtShort(n.resolvedAt) : '')+'</div>'+
+        (n.resolved? ' · resolved by '+escapeHtml(n.resolvedBy||"")+' '+fmtShort(n.resolvedAt) : '')+'</div>'+
         '<div style="display:flex;gap:8px;margin-top:6px;">'+
-          (!n.resolved? '<button class="btn sm" data-gn-resolve="'+n.id+'">Mark resolved</button>' : '<button class="btn sm" data-gn-reopen="'+n.id+'">Reopen</button>')+
-          (session.role==="SUPV"? '<button class="btn sm" data-gn-pin="'+n.id+'">'+(n.pinned?"Unpin":"Pin")+'</button>' : '')+
+        (!n.resolved? '<button class="btn sm" data-gn-resolve="'+n.id+'">Mark resolved</button>' : '<button class="btn sm" data-gn-reopen="'+n.id+'">Reopen</button>')+
+        (session.role==="SUPV"? '<button class="btn sm" data-gn-pin="'+n.id+'">'+(n.pinned?"Unpin":"Pin")+'</button>' : '')+
         '</div>'+
-      '</div>';
+        '</div>';
     }).join("");
   }
   html += '</div></div>';
   return html;
 }
+
 function wireGuardNotes(){
   document.querySelectorAll("[data-gnfilter]").forEach(function(b){ b.addEventListener("click", function(){ uiState.guardNotesFilter=b.getAttribute("data-gnfilter"); render(); }); });
   var form = document.getElementById("guardNoteForm");
@@ -447,9 +456,9 @@ function wireGuardNotes(){
     if(!text){ toast("Note text is required."); return; }
     var postId = fd.get("post"); var post = STATE.posts.find(function(x){return x.id===postId;});
     var n = {id:uid("note"), post: postId?(postId+" "+(post?post.name:"")):"", text:text,
-      pinned: session.role==="SUPV" && fd.get("pinned")==="on",
-      authorName: session.name, authorCallsign: session.callsign, createdAt:nowIso(),
-      resolved:false, resolvedAt:null, resolvedBy:null};
+             pinned: session.role==="SUPV" && fd.get("pinned")==="on",
+             authorName: session.name, authorCallsign: session.callsign, createdAt:nowIso(),
+             resolved:false, resolvedAt:null, resolvedBy:null};
     STATE.guardNotes.unshift(n);
     logActivity("NOTE", session.callsign, "Guard note posted"+(n.post?" — "+n.post:"")+": "+text.slice(0,80));
     form.reset();
@@ -464,15 +473,16 @@ function wireGuardNotes(){
       persist(function(){ return DB.guardNotes.setResolved(n.id, true, n.resolvedAt, n.resolvedBy); }, "guard note resolve");
     });
   });
-  document.querySelectorAll("[data-gn-reopen]").forEach(function(b){
-    b.addEventListener("click", function(){
-      var n = STATE.guardNotes.find(function(x){return x.id===b.getAttribute("data-gn-reopen");});
-      if(!n) return;
-      n.resolved=false; n.resolvedAt=null; n.resolvedBy=null;
-      logActivity("NOTE", session.callsign, "Guard note reopened — "+n.text.slice(0,80));
-      persist(function(){ return DB.guardNotes.setResolved(n.id, false, null, null); }, "guard note reopen");
-    });
+
+document.querySelectorAll("[data-gn-reopen]").forEach(function(b){
+  b.addEventListener("click", function(){
+    var n = STATE.guardNotes.find(function(x){return x.id===b.getAttribute("data-gn-reopen");});
+    if(!n) return;
+    n.resolved=false; n.resolvedAt=null; n.resolvedBy=null;
+    logActivity("NOTE", session.callsign, "Guard note reopened — "+n.text.slice(0,80));
+    persist(function(){ return DB.guardNotes.setResolved(n.id, false, null, null); }, "guard note reopen");
   });
+});
   document.querySelectorAll("[data-gn-pin]").forEach(function(b){
     b.addEventListener("click", function(){
       if(session.role!=="SUPV") return;
@@ -495,8 +505,8 @@ function renderLog(){
       return '<tr><td class="mono small-muted" style="white-space:nowrap;">'+fmtShort(l.at)+'</td><td><span class="pill muted">'+l.type+'</span></td><td class="mono">'+escapeHtml(l.actor)+'</td><td>'+escapeHtml(l.text)+'</td></tr>';
     }).join("") + '</tbody></table></div>';
 
-  // shift report
-  var calls = STATE.calls.length, cleared = STATE.calls.filter(function(c){return c.status==="CLEARED";}).length;
+// shift report
+var calls = STATE.calls.length, cleared = STATE.calls.filter(function(c){return c.status==="CLEARED";}).length;
   var open = STATE.calls.filter(function(c){return c.status!=="CLEARED";}).length;
   html += '<div class="card" style="margin-top:16px;"><div class="section-head"><h2>Shift Report <span class="meta">Last 12 hours</span></h2></div>'+
     '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;text-align:center;">'+
@@ -538,10 +548,10 @@ function renderUsers(){
       var currentLabel = current ? (currentPost ? currentPost.id+" — "+currentPost.name : current) : "All Sites (Dispatch/Admin)";
       mapAccess = session.role==="SUPV" ?
         ('<div style="margin-top:6px;"><span class="small-muted" style="margin-right:6px;">Map access</span>'+
-          '<select class="mapAccessSel" data-user="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:12px;padding:4px 6px;">'+
-            '<option value="">All Sites (Dispatch/Admin)</option>'+
-            STATE.posts.map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(current===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
-          '</select></div>')
+         '<select class="mapAccessSel" data-user="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:12px;padding:4px 6px;">'+
+         '<option value="">All Sites (Dispatch/Admin)</option>'+
+         STATE.posts.map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(current===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
+         '</select></div>')
         : ('<div class="small-muted" style="margin-top:4px;">Map access: '+escapeHtml(currentLabel)+'</div>');
     }
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid hsl(var(--border)/.6);">'+
@@ -551,11 +561,12 @@ function renderUsers(){
       mapAccess+
       '</div>'+
       (session.role==="SUPV"? '<div style="display:flex;gap:6px;"><button class="btn sm" data-reset-pin="'+escapeHtml(u.callsign)+'">Reset PIN</button><button class="btn sm ghost" data-toggle-active="'+escapeHtml(u.callsign)+'">'+(u.active?"Deactivate":"Activate")+'</button></div>' : '')+
-    '</div>';
+      '</div>';
   }).join("");
   html += '</div>';
   return html;
 }
+
 function wireUsers(){
   var pinBtn = document.querySelector('[data-action="changeMyPin"]'); if(pinBtn) pinBtn.addEventListener("click", async function(){ var cur = (document.getElementById("pinCurrent")||{}).value||""; var next = (document.getElementById("pinNew")||{}).value||""; var conf = (document.getElementById("pinConfirm")||{}).value||""; cur=cur.trim(); next=next.trim(); conf=conf.trim(); if(!cur || !next || !conf){ toast("Fill in all three PIN fields."); return; } if(next.length<4){ toast("New PIN must be at least 4 digits."); return; } if(next!==conf){ toast("New PIN and confirmation do not match."); return; } pinBtn.disabled = true; try{ var ok = DB.configured ? await DB.auth.verifyPin(session.callsign, cur) : cur==="1234"; if(!ok){ toast("Current PIN is incorrect."); pinBtn.disabled=false; return; } if(DB.configured) await DB.auth.setPin(session.callsign, next); var me = STATE.users.find(function(x){return x.callsign===session.callsign;}); if(me) me.mustChangePin = false; logActivity("AUTH", session.callsign, session.name+" changed their own PIN"); toast("PIN updated."); persist(); }catch(e){ toast("Couldn't update PIN: "+(e.message||e)); pinBtn.disabled=false; } });
   var addBtn = document.querySelector('[data-action="addUser"]');
@@ -572,17 +583,18 @@ function wireUsers(){
     logActivity("AUTH", session.callsign, session.name+" created guard account "+cs+" ("+name+")");
     persist();
   });
-  document.querySelectorAll("[data-reset-pin]").forEach(function(b){
-    b.addEventListener("click", async function(){
-      var cs=b.getAttribute("data-reset-pin");
-      if(DB.configured){
-        try{ await DB.auth.resetPin(cs); }
-        catch(e){ toast("Couldn't reset the PIN: "+(e.message||e)); return; }
-      }
-      logActivity("AUTH", session.callsign, session.name+" reset the PIN for "+cs+" — change required at next sign-in");
-      toast("PIN reset to 1234 for "+cs); persist();
-    });
+
+document.querySelectorAll("[data-reset-pin]").forEach(function(b){
+  b.addEventListener("click", async function(){
+    var cs=b.getAttribute("data-reset-pin");
+    if(DB.configured){
+      try{ await DB.auth.resetPin(cs); }
+      catch(e){ toast("Couldn't reset the PIN: "+(e.message||e)); return; }
+    }
+    logActivity("AUTH", session.callsign, session.name+" reset the PIN for "+cs+" — change required at next sign-in");
+    toast("PIN reset to 1234 for "+cs); persist();
   });
+});
   document.querySelectorAll("[data-toggle-active]").forEach(function(b){
     b.addEventListener("click", async function(){
       var cs=b.getAttribute("data-toggle-active"); var u=STATE.users.find(function(x){return x.callsign===cs;});
@@ -608,28 +620,28 @@ function wireUsers(){
       u.assignedPostId = postId;
       logActivity("AUTH", session.callsign, session.name+" set map access for "+cs+" to "+label);
       // If this is the signed-in account, apply the new scope to this browser's session right away.
-      if(session.callsign===cs){ session.assignedPostId = postId; sessionStorage.setItem("cad_session", JSON.stringify(session)); }
+                         if(session.callsign===cs){ session.assignedPostId = postId; sessionStorage.setItem("cad_session", JSON.stringify(session)); }
       persist();
     });
   });
 }
 
 /* ---------------- LIVE MAP (Dispatch / Supervisors / Admins only) ----------------
-   Plots each guard's most recent GPS ping (STATE.guardLocations, refreshed automatically —
-   see startLiveTracking in app.js) on a free Leaflet + OpenStreetMap map, no API key or billing
-   account required. "Show trail" overlays that guard's checkpoint-scan history for today from
-   STATE.checkpointScans. Gated to role SUPV in two places: the sidebar (renderShell) hides the
-   nav item for guards, and this function itself refuses to render for anyone else — the same
-   belt-and-suspenders pattern already used for the other SUPV-only actions in this file. Like
-   every other table in this app, the underlying data is still reachable by anyone with the
-   Supabase anon key (see the SECURITY NOTE in schema.sql) — this is a UI-level restriction,
-   not a database-level one.
+Plots each guard's most recent GPS ping (STATE.guardLocations, refreshed automatically —
+see startLiveTracking in app.js) on a free Leaflet + OpenStreetMap map, no API key or billing
+account required. "Show trail" overlays that guard's checkpoint-scan history for today from
+STATE.checkpointScans. Gated to role SUPV in two places: the sidebar (renderShell) hides the
+nav item for guards, and this function itself refuses to render for anyone else — the same
+belt-and-suspenders pattern already used for the other SUPV-only actions in this file. Like
+every other table in this app, the underlying data is still reachable by anyone with the
+Supabase anon key (see the SECURITY NOTE in schema.sql) — this is a UI-level restriction,
+not a database-level one.
 
-   Within that SUPV gate, each account is further scoped by session.assignedPostId (set per
-   account from the Users tab's "Map access" control, src/part3.js renderUsers/wireUsers): a
-   Supervisor assigned to a site only sees that site's guards, matched against which post each
-   guard's unit is currently posted to (units[].post). Left unassigned — the default — an
-   account sees every site, i.e. Dispatch/Admin. */
+Within that SUPV gate, each account is further scoped by session.assignedPostId (set per
+account from the Users tab's "Map access" control, src/part3.js renderUsers/wireUsers): a
+Supervisor assigned to a site only sees that site's guards, matched against which post each
+guard's unit is currently posted to (units[].post). Left unassigned — the default — an
+account sees every site, i.e. Dispatch/Admin. */
 var RIDGECREST_CENTER = [35.6225, -117.6709]; // Ridgecrest, CA — default view before any pings arrive
 var _liveMapView = null; // remembers pan/zoom across re-renders (the view's DOM, and the map with it, is rebuilt on every render() call)
 function mapScopePostId(){ return (session && session.assignedPostId) || ""; }
@@ -647,6 +659,7 @@ function scopedGuardLocations(){
   STATE.units.forEach(function(u){ if(u.post===postId) atSite[u.callsign]=1; });
   return locs.filter(function(l){ return atSite[l.callsign]; });
 }
+
 function renderMap(){
   if(!session || session.role!=="SUPV"){
     return '<div class="card"><div class="empty-state">This view is limited to Dispatch, Supervisors, and Admins.</div></div>';
@@ -675,6 +688,7 @@ function renderMap(){
   html += '</div>';
   return html;
 }
+
 function wireMap(){
   if(!session || session.role!=="SUPV") return;
   document.querySelectorAll("[data-map-trail]").forEach(function(b){
@@ -709,7 +723,7 @@ function wireMap(){
       trail.forEach(function(s){ pts.push([s.lat,s.lng]); });
       var last = trail[trail.length-1];
       L.circleMarker([last.lat,last.lng], {radius:5, color:"#f5a83f", fillColor:"#f5a83f", fillOpacity:1}).addTo(map)
-        .bindPopup("Last scan — "+escapeHtml(uiState.mapTrailFor)+"<br>"+fmtShort(last.at));
+      .bindPopup("Last scan — "+escapeHtml(uiState.mapTrailFor)+"<br>"+fmtShort(last.at));
     }
   }
   if(_liveMapView){ map.setView(_liveMapView.center, _liveMapView.zoom); }
