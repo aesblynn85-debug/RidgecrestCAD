@@ -4,30 +4,30 @@ function renderDispatch(){
   var queue = STATE.calls.filter(function(c){ return c.status!=="CLEARED"; }).sort(function(a,b){ return a.priority-b.priority || new Date(a.createdAt)-new Date(b.createdAt); });
   var html = '<div class="three-col">';
 
-  // New call intake
-  html += '<div class="card"><div class="section-head"><h2>New Call Intake</h2><span class="pill blue">'+escapeHtml(session.callsign)+'</span></div>'+
-    '<form id="callForm">'+
-    '<label class="field"><span class="lbl">Incident Code</span><select name="code"><option value="">Select code…</option>'+
-      C.CALL_CODES.map(function(c){ return '<option value="'+escapeHtml(c)+'">'+escapeHtml(c)+'</option>'; }).join("")+
-    '</select></label>'+
-    '<label class="field"><span class="lbl">Type / Nature</span><input type="text" name="nature" placeholder="Auto-filled from code — edit as needed"></label>'+
-    '<label class="field"><span class="lbl">Priority</span><div class="priobtns" id="prioBtns">'+
-      [1,2,3,4].map(function(p){ return '<button type="button" data-p="'+p+'" class="'+(p===3?"active":"")+'">P'+p+'</button>'; }).join("")+
-    '</div></label>'+
-    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">Select post…</option>'+
-      STATE.posts.map(function(p){ return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
-    '</select></label>'+
-    '<label class="field"><span class="lbl">Exact Location</span><input type="text" name="location" placeholder="Floor, zone, door, lot…"></label>'+
-    '<div class="grid2"><label class="field"><span class="lbl">Reporting Party</span><input type="text" name="rp" placeholder="Name"></label>'+
-    '<label class="field"><span class="lbl">Callback</span><input type="text" name="callback" placeholder="Phone"></label></div>'+
-    '<label class="field"><span class="lbl">Received Via</span><div class="via-grid" id="viaGrid">'+
-      C.RECEIVED_VIA.map(function(v,i){ return '<button type="button" data-via="'+escapeHtml(v)+'" class="'+(i===0?"active":"")+'">'+escapeHtml(v)+'</button>'; }).join("")+
-    '</div></label>'+
-    '<div style="display:flex;gap:8px;margin-top:12px;"><button type="submit" class="btn primary" style="flex:1;">Create call</button><button type="button" class="btn ghost" data-action="clearIntake">Clear</button></div>'+
-    '</form></div>';
+// New call intake
+html += '<div class="card"><div class="section-head"><h2>New Call Intake</h2><span class="pill blue">'+escapeHtml(session.callsign)+'</span></div>'+
+  '<form id="callForm">'+
+  '<label class="field"><span class="lbl">Incident Code</span><select name="code"><option value="">Select code…</option>'+
+  C.CALL_CODES.map(function(c){ return '<option value="'+escapeHtml(c)+'">'+escapeHtml(c)+'</option>'; }).join("")+
+  '</select></label>'+
+  '<label class="field"><span class="lbl">Type / Nature</span><input type="text" name="nature" placeholder="Auto-filled from code — edit as needed"></label>'+
+  '<label class="field"><span class="lbl">Priority</span><div class="priobtns" id="prioBtns">'+
+  [1,2,3,4].map(function(p){ return '<button type="button" data-p="'+p+'" class="'+(p===3?"active":"")+'">P'+p+'</button>'; }).join("")+
+  '</div></label>'+
+  '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">Select post…</option>'+
+  STATE.posts.map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
+  '</select></label>'+
+  '<label class="field"><span class="lbl">Exact Location</span><input type="text" name="location" placeholder="Floor, zone, door, lot…"></label>'+
+  '<div class="grid2"><label class="field"><span class="lbl">Reporting Party</span><input type="text" name="rp" placeholder="Name"></label>'+
+  '<label class="field"><span class="lbl">Callback</span><input type="text" name="callback" placeholder="Phone"></label></div>'+
+  '<label class="field"><span class="lbl">Received Via</span><div class="via-grid" id="viaGrid">'+
+  C.RECEIVED_VIA.map(function(v,i){ return '<button type="button" data-via="'+escapeHtml(v)+'" class="'+(i===0?"active":"")+'">'+escapeHtml(v)+'</button>'; }).join("")+
+  '</div></label>'+
+  '<div style="display:flex;gap:8px;margin-top:12px;"><button type="submit" class="btn primary" style="flex:1;">Create call</button><button type="button" class="btn ghost" data-action="clearIntake">Clear</button></div>'+
+  '</form></div>';
 
-  // Active queue
-  html += '<div class="card"><div class="section-head"><h2>Active Queue <span class="meta">'+queue.length+'</span></h2></div>';
+// Active queue
+                                                                                                                                                                    html += '<div class="card"><div class="section-head"><h2>Active Queue <span class="meta">'+queue.length+'</span></h2></div>';
   if(queue.length===0){
     html += '<div class="empty-state">Queue is clear.<br>No open calls. New intake appears here immediately.</div>';
   } else {
@@ -36,13 +36,13 @@ function renderDispatch(){
         '<div class="top"><span>#'+c.id+' · P'+c.priority+' '+escapeHtml(c.code||"")+'</span><span>'+fmtShort(c.createdAt)+'</span></div>'+
         '<div class="subj">'+escapeHtml(c.nature||c.code||"")+'</div>'+
         '<div class="meta">@ '+escapeHtml(c.post||"—")+' · <span class="pill '+(c.status==="DISPATCHED"?"blue":c.status==="ENROUTE"?"blue":c.status==="ONSCENE"?"ok":"muted")+'">'+c.status+'</span>'+((c.assignedUnits&&c.assignedUnits.length)?" · "+escapeHtml(c.assignedUnits.join(", ")):"")+'</div>'+
-      '</div>';
+        '</div>';
     }).join("");
   }
   html += '</div>';
 
-  // Unit status
-  html += '<div class="card"><div class="section-head"><h2>Unit Status</h2><span class="meta">'+STATE.units.filter(function(u){return u.status!=="OFFDUTY";}).length+' on duty</span></div>';
+// Unit status
+html += '<div class="card"><div class="section-head"><h2>Unit Status</h2><span class="meta">'+STATE.units.filter(function(u){return u.status!=="OFFDUTY";}).length+' on duty</span></div>';
   ["AVAILABLE","DISPATCHED","ONSCENE","OFFDUTY"].forEach(function(st){
     var us = STATE.units.filter(function(u){ return u.status===st; });
     if(!us.length) return;
@@ -51,63 +51,64 @@ function renderDispatch(){
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid hsl(var(--border)/.5);">'+
         '<div><div style="font-weight:600;">'+escapeHtml(u.callsign)+' '+escapeHtml(u.name)+'</div><div class="small-muted">'+escapeHtml(u.type)+' · '+escapeHtml(u.post||"")+' · '+escapeHtml(u.shift||"")+'</div></div>'+
         '<select class="unitStatusSel" data-unit="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:11px;padding:4px 6px;">'+
-          ["AVAILABLE","DISPATCHED","ONSCENE","OFFDUTY"].map(function(s){ return '<option value="'+s+'" '+(s===u.status?"selected":"")+'>'+s+'</option>'; }).join("")+
+        ["AVAILABLE","DISPATCHED","ONSCENE","OFFDUTY"].map(function(s){ return '<option value="'+s+'" '+(s===u.status?"selected":"")+'>'+s+'</option>'; }).join("")+
         '</select></div>';
     }).join("");
   });
-  html += '<div class="small-muted" style="margin:14px 0 6px;text-transform:uppercase;letter-spacing:.05em;">Live Log</div><div style="max-height:260px;overflow-y:auto;">';
+
+html += '<div class="small-muted" style="margin:14px 0 6px;text-transform:uppercase;letter-spacing:.05em;">Live Log</div><div style="max-height:260px;overflow-y:auto;">';
   html += STATE.activityLog.slice(0,12).map(function(l){
     return '<div style="padding:5px 0;border-bottom:1px solid hsl(var(--border)/.4);font-size:11px;"><span class="small-muted">'+fmtShort(l.at)+'</span> '+escapeHtml(l.text)+'</div>';
   }).join("");
   html += '</div></div>';
 
-  html += '</div>';
+html += '</div>';
 
-  if(uiState.openCallId){
-    var oc = STATE.calls.find(function(c){ return c.id===uiState.openCallId; });
-    if(oc) html += renderCallModal(oc);
-  }
+if(uiState.openCallId){
+  var oc = STATE.calls.find(function(c){ return c.id===uiState.openCallId; });
+  if(oc) html += renderCallModal(oc);
+}
   return html;
 }
 
 function renderCallModal(c){
   var C=window.__CAD;
   var narr = (c.narrativeSupplements||[]).map(function(n){ return '<div style="margin-bottom:6px;"><span class="small-muted">'+fmtShort(n.at)+' '+escapeHtml(n.by)+':</span> '+escapeHtml(n.text)+'</div>'; }).join("") || '<div class="small-muted">No supplements yet.</div>';
-var assigned = c.assignedUnits || [];
-var availUnits = STATE.units.filter(function(u){ return u.status==="AVAILABLE"; });
-var unitsHtml = assigned.length ? assigned.map(function(cs){
-var u = STATE.units.find(function(x){return x.callsign===cs;});
-var st = u ? u.status : "?";
-return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">'+
-'<span>'+escapeHtml(cs)+(u?" — "+escapeHtml(u.name):"")+' <span class="pill '+(st==="ONSCENE"?"ok":(st==="ENROUTE"||st==="DISPATCHED")?"blue":"muted")+'">'+st+'</span></span>'+
-'<button class="btn sm ghost" data-action="unassignUnit" data-call="'+c.id+'" data-unit="'+escapeHtml(cs)+'">Remove</button>'+
-'</div>';
-}).join("") : '<div class="small-muted">No units assigned yet.</div>';
-var pickerHtml = availUnits.length ?
-'<div style="display:flex;gap:6px;margin-top:8px;"><select id="unitPicker" style="flex:1;">'+
-availUnits.map(function(u){ return '<option value="'+escapeHtml(u.callsign)+'">'+escapeHtml(u.callsign+" — "+u.name)+'</option>'; }).join("")+
-'</select><button class="btn sm" data-action="assignUnit" data-call="'+c.id+'">Add unit</button></div>' :
-'<div class="small-muted" style="margin-top:8px;">No available units to assign.</div>';
+  var assigned = c.assignedUnits || [];
+  var availUnits = STATE.units.filter(function(u){ return u.status==="AVAILABLE"; });
+  var unitsHtml = assigned.length ? assigned.map(function(cs){
+    var u = STATE.units.find(function(x){return x.callsign===cs;});
+    var st = u ? u.status : "?";
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">'+
+      '<span>'+escapeHtml(cs)+(u?" — "+escapeHtml(u.name):"")+' <span class="pill '+(st==="ONSCENE"?"ok":(st==="ENROUTE"||st==="DISPATCHED")?"blue":"muted")+'">'+st+'</span></span>'+
+      '<button class="btn sm ghost" data-action="unassignUnit" data-call="'+c.id+'" data-unit="'+escapeHtml(cs)+'">Remove</button>'+
+      '</div>';
+  }).join("") : '<div class="small-muted">No units assigned yet.</div>';
+  var pickerHtml = availUnits.length ?
+    '<div style="display:flex;gap:6px;margin-top:8px;"><select id="unitPicker" style="flex:1;">'+
+    availUnits.map(function(u){ return '<option value="'+escapeHtml(u.callsign)+'">'+escapeHtml(u.callsign+" — "+u.name)+'</option>'; }).join("")+
+    '</select><button class="btn sm" data-action="assignUnit" data-call="'+c.id+'">Add unit</button></div>' :
+    '<div class="small-muted" style="margin-top:8px;">No available units to assign.</div>';
   return '<div class="modal-backdrop" data-close-modal="1"><div class="modal" onclick="event.stopPropagation()">'+
     '<button class="close" data-action="closeCall">✕</button>'+
     '<div class="rtaid">#'+c.id+'</div><h2>'+escapeHtml(c.nature||c.code||"")+'</h2>'+
     '<div class="kv-grid">'+
-      '<div><div class="k">Priority</div><div class="v">P'+c.priority+' — '+C.PRIORITIES[c.priority]+'</div></div>'+
-      '<div><div class="k">Status</div><div class="v">'+c.status+'</div></div>'+
-      '<div><div class="k">Post</div><div class="v">'+escapeHtml(c.post||"—")+'</div></div>'+
-      '<div><div class="k">Location</div><div class="v">'+escapeHtml(c.location||"—")+'</div></div>'+
-      '<div><div class="k">Created</div><div class="v">'+fmtDT(c.createdAt)+'</div></div>'+
-      
+    '<div><div class="k">Priority</div><div class="v">P'+c.priority+' — '+C.PRIORITIES[c.priority]+'</div></div>'+
+    '<div><div class="k">Status</div><div class="v">'+c.status+'</div></div>'+
+    '<div><div class="k">Post</div><div class="v">'+escapeHtml(c.post||"—")+'</div></div>'+
+    '<div><div class="k">Location</div><div class="v">'+escapeHtml(c.location||"—")+'</div></div>'+
+    '<div><div class="k">Created</div><div class="v">'+fmtDT(c.createdAt)+'</div></div>'+
+
     '</div>'+
     '<div class="field-block"><div class="k">Assigned Units ('+assigned.length+')</div>'+unitsHtml+pickerHtml+'</div>'+'<div class="field-block"><div class="k">Narrative Supplements</div>'+narr+'</div>'+
     '<label class="field"><span class="lbl">Add supplement</span><textarea id="callSupp" rows="2"></textarea></label>'+
     '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
-      '<button class="btn sm" data-action="addSupp" data-call="'+c.id+'">Add note</button>'+
-      '<button class="btn sm" data-action="callStatus" data-call="'+c.id+'" data-to="ENROUTE">Enroute to call</button>'+
-      '<button class="btn sm ok" data-action="callStatus" data-call="'+c.id+'" data-to="ONSCENE">On scene</button>'+
-      '<button class="btn sm destructive" data-action="callStatus" data-call="'+c.id+'" data-to="CLEARED">Clear call</button>'+
+    '<button class="btn sm" data-action="addSupp" data-call="'+c.id+'">Add note</button>'+
+    '<button class="btn sm" data-action="callStatus" data-call="'+c.id+'" data-to="ENROUTE">Enroute to call</button>'+
+    '<button class="btn sm ok" data-action="callStatus" data-call="'+c.id+'" data-to="ONSCENE">On scene</button>'+
+    '<button class="btn sm destructive" data-action="callStatus" data-call="'+c.id+'" data-to="CLEARED">Clear call</button>'+
     '</div>'+
-  '</div></div>';
+    '</div></div>';
 }
 
 function wireDispatch(){
@@ -127,8 +128,8 @@ function wireDispatch(){
     var postId = fd.get("post");
     var post = STATE.posts.find(function(p){return p.id===postId;});
     // Atomic server-side counter when connected, so two guards creating calls at the same
-    // moment never collide on the same ID (a real risk once this isn't single-writer anymore).
-    var seq = DB.configured ? await DB.counters.next("call").catch(function(){ return (STATE.callSeq||0)+1; }) : (STATE.callSeq||0)+1;
+                        // moment never collide on the same ID (a real risk once this isn't single-writer anymore).
+                        var seq = DB.configured ? await DB.counters.next("call").catch(function(){ return (STATE.callSeq||0)+1; }) : (STATE.callSeq||0)+1;
     STATE.callSeq = seq;
     var id = window.__CAD.todayCode()+"-"+String(seq).padStart(4,"0");
     var call = {
@@ -145,9 +146,9 @@ function wireDispatch(){
   var clearBtn = document.querySelector('[data-action="clearIntake"]');
   if(clearBtn) clearBtn.addEventListener("click", function(){ form.reset(); });
 
-  document.querySelectorAll("[data-open-call]").forEach(function(el){
-    el.addEventListener("click", function(){ uiState.openCallId = el.getAttribute("data-open-call"); render(); });
-  });
+document.querySelectorAll("[data-open-call]").forEach(function(el){
+  el.addEventListener("click", function(){ uiState.openCallId = el.getAttribute("data-open-call"); render(); });
+});
   var backdrop = document.querySelector("[data-close-modal]");
   if(backdrop) backdrop.addEventListener("click", function(){ uiState.openCallId=null; render(); });
   var closeBtn = document.querySelector('[data-action="closeCall"]');
@@ -167,13 +168,13 @@ function wireDispatch(){
     b.addEventListener("click", function(){
       var id=b.getAttribute("data-call"); var to=b.getAttribute("data-to");
       var c=STATE.calls.find(function(x){return x.id===id;});
-var from=c.status; c.status=to;
+      var from=c.status; c.status=to;
       logActivity("INCIDENT", session.callsign, id+" status "+from+" → "+to);
       var assignedCs = c.assignedUnits || [];
       var unitWrites = [];
       if(to==="ENROUTE" || to==="ONSCENE"){
         assignedCs.forEach(function(cs){
-          var u = STATE.units.find(function(x){return x.callsign===cs;});
+         var u = STATE.units.find(function(x){return x.callsign===cs;});
           if(u && u.status!==to){
             var ufrom=u.status; u.status=to; u.statusSince=nowIso();
             logActivity("UNIT","DISPATCH","Unit "+cs+" status "+ufrom+" → "+to);
@@ -181,17 +182,18 @@ var from=c.status; c.status=to;
           }
         });
       }
-      if(to==="CLEARED"){
-        assignedCs.forEach(function(cs){
-          var u = STATE.units.find(function(x){return x.callsign===cs;});
-          if(u && u.status!=="AVAILABLE"){
-            var ufrom=u.status; u.status="AVAILABLE"; u.statusSince=nowIso();
-            logActivity("UNIT","DISPATCH","Unit "+cs+" status "+ufrom+" → AVAILABLE");
-            unitWrites.push(DB.units.update(cs, {status:"AVAILABLE", status_since:u.statusSince}));
-          }
-        });
-        uiState.openCallId=null;
-      }
+
+                       if(to==="CLEARED"){
+                         assignedCs.forEach(function(cs){
+                           var u = STATE.units.find(function(x){return x.callsign===cs;});
+                           if(u && u.status!=="AVAILABLE"){
+                             var ufrom=u.status; u.status="AVAILABLE"; u.statusSince=nowIso();
+                             logActivity("UNIT","DISPATCH","Unit "+cs+" status "+ufrom+" → AVAILABLE");
+                             unitWrites.push(DB.units.update(cs, {status:"AVAILABLE", status_since:u.statusSince}));
+                           }
+                         });
+                         uiState.openCallId=null;
+                       }
       persist(function(){ return Promise.all([DB.calls.update(id, {status:to})].concat(unitWrites)); }, "call "+id+" status");
     });
   });
@@ -207,7 +209,7 @@ var from=c.status; c.status=to;
       if(c.assignedUnits.indexOf(cs)===-1) c.assignedUnits.push(cs);
       u.status="DISPATCHED"; u.statusSince=nowIso();
       if(c.status==="PENDING") c.status="DISPATCHED";
-      logActivity("INCIDENT", session.callsign, "Unit "+cs+" dispatched to "+id);
+                       logActivity("INCIDENT", session.callsign, "Unit "+cs+" dispatched to "+id);
       logActivity("UNIT", "DISPATCH", "Unit "+cs+" status AVAILABLE → DISPATCHED");
       persist(function(){ return Promise.all([
         DB.calls.update(id, {status:c.status, assigned_units:c.assignedUnits}),
@@ -215,21 +217,22 @@ var from=c.status; c.status=to;
         ]); }, "dispatch to "+id);
     });
   });
-  document.querySelectorAll('[data-action="unassignUnit"]').forEach(function(b){
-    b.addEventListener("click", function(){
-      var id=b.getAttribute("data-call"); var cs=b.getAttribute("data-unit");
-      var c=STATE.calls.find(function(x){return x.id===id;});
-      c.assignedUnits = (c.assignedUnits||[]).filter(function(x){return x!==cs;});
-      var u = STATE.units.find(function(x){return x.callsign===cs;});
-      if(u){ u.status="AVAILABLE"; u.statusSince=nowIso(); }
-      logActivity("INCIDENT", session.callsign, "Unit "+cs+" removed from "+id);
-      if(u) logActivity("UNIT","DISPATCH","Unit "+cs+" status → AVAILABLE");
-      persist(function(){ return Promise.all([
-        DB.calls.update(id, {assigned_units:c.assignedUnits}),
-        u ? DB.units.update(cs, {status:"AVAILABLE", status_since:u.statusSince}) : Promise.resolve()
-        ]); }, "unassign "+cs+" from "+id);
-    });
+
+document.querySelectorAll('[data-action="unassignUnit"]').forEach(function(b){
+  b.addEventListener("click", function(){
+    var id=b.getAttribute("data-call"); var cs=b.getAttribute("data-unit");
+    var c=STATE.calls.find(function(x){return x.id===id;});
+    c.assignedUnits = (c.assignedUnits||[]).filter(function(x){return x!==cs;});
+    var u = STATE.units.find(function(x){return x.callsign===cs;});
+    if(u){ u.status="AVAILABLE"; u.statusSince=nowIso(); }
+    logActivity("INCIDENT", session.callsign, "Unit "+cs+" removed from "+id);
+    if(u) logActivity("UNIT","DISPATCH","Unit "+cs+" status → AVAILABLE");
+    persist(function(){ return Promise.all([
+      DB.calls.update(id, {assigned_units:c.assignedUnits}),
+      u ? DB.units.update(cs, {status:"AVAILABLE", status_since:u.statusSince}) : Promise.resolve()
+      ]); }, "unassign "+cs+" from "+id);
   });
+});
   document.querySelectorAll(".unitStatusSel").forEach(function(sel){
     sel.addEventListener("change", function(){
       var cs=sel.getAttribute("data-unit"); var u=STATE.units.find(function(x){return x.callsign===cs;});
@@ -246,19 +249,33 @@ function renderUnits(){
   var onDuty = STATE.units.filter(function(u){return u.status!=="OFFDUTY";}).length;
   var html = '<div class="card"><div class="section-head"><h2>Guard &amp; Unit Roster</h2><span class="meta">'+onDuty+' on duty / '+STATE.units.length+' total</span></div>'+
     '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn sm primary" data-action="addUnit">+ Add unit</button></div>'+
-    '<table class="datatable"><thead><tr><th>Callsign</th><th>Guard</th><th>Type</th><th>Status</th><th>Since</th><th>Post</th><th>Shift</th><th></th></tr></thead><tbody>'+
+    '<div class="small-muted" style="margin-bottom:8px;">Assigned Sites is the pool of sites a guard can work — ctrl/cmd-click to select more than one. Post is the ONE site they are on for the current shift; it also auto-fills the Post/Site field when they self-initiate a call, report, parking violation, or truck log. Guards can set their own Post from the "My Site" picker in their sidebar.</div>'+
+    '<table class="datatable"><thead><tr><th>Callsign</th><th>Guard</th><th>Type</th><th>Status</th><th>Since</th><th>Assigned Sites</th><th>Post (this shift)</th><th>Shift</th><th></th></tr></thead><tbody>'+
     STATE.units.map(function(u){
+      var assigned = (STATE.unitSites||[]).filter(function(x){return x.callsign===u.callsign;}).map(function(x){return x.postId;});
+      var postOptions = assigned.length ? STATE.posts.filter(function(p){return assigned.indexOf(p.id)!==-1;}) : STATE.posts;
       return '<tr><td class="mono">'+escapeHtml(u.callsign)+'</td><td>'+escapeHtml(u.name)+'</td>'+
         '<td><select class="unitTypeSel" data-unit="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:12px;padding:4px 6px;">'+
-          C.UNIT_TYPES.map(function(t){ return '<option value="'+escapeHtml(t)+'" '+(t===u.type?"selected":"")+'>'+escapeHtml(t)+'</option>'; }).join("")+
-          (C.UNIT_TYPES.indexOf(u.type)===-1 && u.type ? '<option value="'+escapeHtml(u.type)+'" selected>'+escapeHtml(u.type)+'</option>' : '')+
+        C.UNIT_TYPES.map(function(t){ return '<option value="'+escapeHtml(t)+'" '+(t===u.type?"selected":"")+'>'+escapeHtml(t)+'</option>'; }).join("")+
+        (C.UNIT_TYPES.indexOf(u.type)===-1 && u.type ? '<option value="'+escapeHtml(u.type)+'" selected>'+escapeHtml(u.type)+'</option>' : '')+
         '</select></td>'+
         '<td><span class="pill '+(u.status==="AVAILABLE"?"ok":u.status==="OFFDUTY"?"muted":"blue")+'">'+u.status+'</span></td>'+
-        '<td class="mono small-muted">'+fmtAgo(u.statusSince)+'</td><td>'+escapeHtml(u.post||"—")+'</td><td>'+escapeHtml(u.shift||"—")+'</td>'+
+        '<td class="mono small-muted">'+fmtAgo(u.statusSince)+'</td>'+
+
+        '<td><select multiple class="unitSitesSel" data-unit="'+escapeHtml(u.callsign)+'" size="'+Math.min(4, Math.max(2, STATE.posts.length))+'" style="min-width:150px;font-size:12px;">'+
+        STATE.posts.map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(assigned.indexOf(p.id)!==-1?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
+        '</select></td>'+
+        '<td><select class="unitPostSel" data-unit="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:12px;padding:4px 6px;">'+
+        '<option value="">— none —</option>'+
+        postOptions.map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(u.post===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
+        (u.post && !postOptions.some(function(p){return p.id===u.post;}) ? '<option value="'+escapeHtml(u.post)+'" selected>'+escapeHtml(u.post)+'</option>' : '')+
+        '</select></td>'+
+        '<td>'+escapeHtml(u.shift||"—")+'</td>'+
         '<td><button class="btn sm ghost" data-remove-unit="'+escapeHtml(u.callsign)+'">Remove</button></td></tr>';
     }).join("") + '</tbody></table></div>';
   return html;
 }
+
 function wireUnits(){
   var addBtn = document.querySelector('[data-action="addUnit"]');
   if(addBtn) addBtn.addEventListener("click", function(){
@@ -277,26 +294,61 @@ function wireUnits(){
       persist(function(){ return DB.units.update(cs, {type:u.type}); }, "unit "+cs+" type");
     });
   });
-  document.querySelectorAll("[data-remove-unit]").forEach(function(b){
-    b.addEventListener("click", function(){
-      var cs=b.getAttribute("data-remove-unit");
-      if(!confirm("Remove unit "+cs+"?")) return;
-      STATE.units = STATE.units.filter(function(u){return u.callsign!==cs;});
-      logActivity("UNIT","DISPATCH","Unit "+cs+" removed from roster");
-      persist(function(){ return DB.units.remove(cs); }, "unit "+cs+" removal");
+
+document.querySelectorAll(".unitSitesSel").forEach(function(sel){
+  sel.addEventListener("change", function(){
+    var cs = sel.getAttribute("data-unit");
+    var selected = Array.prototype.slice.call(sel.selectedOptions).map(function(o){return o.value;});
+    var current = (STATE.unitSites||[]).filter(function(x){return x.callsign===cs;}).map(function(x){return x.postId;});
+    var toAdd = selected.filter(function(id){return current.indexOf(id)===-1;});
+    var toRemove = current.filter(function(id){return selected.indexOf(id)===-1;});
+    STATE.unitSites = (STATE.unitSites||[]).filter(function(x){return !(x.callsign===cs && toRemove.indexOf(x.postId)!==-1);});
+    toAdd.forEach(function(id){ STATE.unitSites.push({callsign:cs, postId:id}); });
+    var u = STATE.units.find(function(x){return x.callsign===cs;});
+    if(u && u.post && selected.length && selected.indexOf(u.post)===-1){
+      // current shift site is no longer in the assigned pool — clear it rather than leave a stale value
+    u.post = "";
+    }
+    logActivity("UNIT", session.callsign, "Assigned sites for "+cs+" set to "+(selected.join(", ")||"none"));
+    persist(function(){
+      var writes = toAdd.map(function(id){ return DB.unitSites.assign(cs,id); })
+      .concat(toRemove.map(function(id){ return DB.unitSites.unassign(cs,id); }));
+      if(u) writes.push(DB.units.update(cs, {post:u.post}));
+      return Promise.all(writes);
+    }, "assigned sites for "+cs);
+  });
+});
+  document.querySelectorAll(".unitPostSel").forEach(function(sel){
+    sel.addEventListener("change", function(){
+      var cs=sel.getAttribute("data-unit"); var u=STATE.units.find(function(x){return x.callsign===cs;});
+      var from=u.post; u.post=sel.value;
+      logActivity("UNIT", session?session.callsign:"DISPATCH", "Unit "+cs+" shift site "+(from||"none")+" → "+(u.post||"none"));
+      persist(function(){ return DB.units.update(cs, {post:u.post}); }, "unit "+cs+" post");
     });
   });
+
+document.querySelectorAll("[data-remove-unit]").forEach(function(b){
+  b.addEventListener("click", function(){
+    var cs=b.getAttribute("data-remove-unit");
+    if(!confirm("Remove unit "+cs+"?")) return;
+    STATE.units = STATE.units.filter(function(u){return u.callsign!==cs;});
+    logActivity("UNIT","DISPATCH","Unit "+cs+" removed from roster");
+    persist(function(){ return DB.units.remove(cs); }, "unit "+cs+" removal");
+  });
+});
 }
 
 /* ---------------- SITES ---------------- */
 // Sites are the security posts/locations themselves. Patrol Tours — the walkable, ordered
 // routes of scan points a supervisor builds live and assigns to guards — are a separate concept
 // with their own nav tab (renderTours/wireTours in part3.js); one site can have many tours. This
-// view is just the site directory now; the old per-checkpoint scan UI moved to Patrol Tours.
+// view is the site directory, plus creating/removing sites themselves (added — previously this
+// was a read-only list with no way to add a new site to the directory).
 function renderSites(){
-  var html = '<div class="card"><div class="section-head"><h2>Site Directory</h2><span class="meta">'+STATE.posts.length+' sites</span></div>';
+  var html = '<div class="card"><div class="section-head"><h2>Site Directory</h2><span class="meta">'+STATE.posts.length+' sites</span></div>'+
+    '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn sm primary" data-action="addSite">+ Add site</button></div>';
   if(!STATE.posts.length){
-    html += '<div class="empty-state">No sites yet.</div>';
+    html += '<div class="empty-state">No sites yet. Use "+ Add site" above to create the first one.</div>';
   } else {
     html += STATE.posts.map(function(p){
       var tourCount = (STATE.patrolTours||[]).filter(function(t){return t.postId===p.id && t.active;}).length;
@@ -304,15 +356,17 @@ function renderSites(){
         '<div class="top"><span><b>'+escapeHtml(p.id)+'</b> — '+escapeHtml(p.name)+'</span><span class="pill blue">'+escapeHtml(p.kind)+'</span></div>'+
         '<div class="meta">'+escapeHtml(p.org)+' · '+escapeHtml(p.address||"No address on file")+'</div>'+
         '<div class="small-muted" style="margin-top:4px;">'+tourCount+' active patrol tour'+(tourCount===1?"":"s")+' — see Patrol Tours</div>'+
-      '</div>';
+        '<div style="margin-top:8px;"><button class="btn sm ghost" data-remove-site="'+escapeHtml(p.id)+'">Remove site</button></div>'+
+        '</div>';
     }).join("");
   }
   html += '</div>';
   return html;
 }
+
 /* Reads the device's current GPS position. Never rejects — resolves null on denial/timeout/no
-   support — so a scan (or, in Patrol Tours, capturing a new point) is never blocked by a
-   guard's or supervisor's location settings. */
+support — so a scan (or, in Patrol Tours, capturing a new point) is never blocked by a
+guard's or supervisor's location settings. */
 function getGeo(){
   return new Promise(function(resolve){
     if(!navigator.geolocation){ resolve(null); return; }
@@ -320,12 +374,34 @@ function getGeo(){
       function(pos){ resolve({lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy}); },
       function(){ resolve(null); },
       { enableHighAccuracy:true, timeout:10000, maximumAge:30000 }
-    );
+      );
   });
 }
 
 function wireSites(){
-  // Plain directory — nothing to wire yet.
+  var addBtn = document.querySelector('[data-action="addSite"]');
+  if(addBtn) addBtn.addEventListener("click", function(){
+    var id = prompt("Site ID (short code, e.g. STEC-62)"); if(!id) return;
+    id = id.trim(); if(!id) return;
+    if(STATE.posts.some(function(p){return p.id===id;})){ toast("Site ID "+id+" already exists."); return; }
+    var name = prompt("Site name")||""; if(!name) return;
+    var kind = prompt("Site kind (e.g. Patrol Post)")||"";
+    var org = prompt("Client / org name")||"";
+    var address = prompt("Address")||"";
+    var p = {id:id, name:name, kind:kind, org:org, address:address, checkpoints:[]};
+    STATE.posts.push(p);
+    logActivity("SYSTEM", session.callsign, "Post "+id+" — "+name+" added to site directory");
+    persist(function(){ return DB.posts.insert(p); }, "site "+id);
+  });
+  document.querySelectorAll("[data-remove-site]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var id = b.getAttribute("data-remove-site");
+      if(!confirm("Remove site "+id+"? This cannot be undone and may affect units/calls referencing it.")) return;
+      STATE.posts = STATE.posts.filter(function(p){return p.id!==id;});
+      logActivity("SYSTEM", session.callsign, "Post "+id+" removed from site directory");
+      persist(function(){ return DB.posts.remove(id); }, "site "+id+" removal");
+    });
+  });
 }
 
 /* ---------------- PATROL CHAT ---------------- */
@@ -340,8 +416,8 @@ function renderChat(){
     STATE.chat.channels.map(function(c){ return '<button class="btn ghost sm" data-chan="'+c.id+'" style="width:100%;justify-content:flex-start;margin-bottom:2px;'+(c.id===ch.id?'background:hsl(var(--accent));':'')+'">#'+escapeHtml(c.name)+'</button>'; }).join("")+
     '<div class="divider"></div><div style="display:flex;gap:6px;"><input id="newChanName" type="text" placeholder="New channel"><button class="btn sm" data-action="addChan">Add</button></div>'+
     '<div class="small-muted" style="margin-top:14px;text-transform:uppercase;">On Duty</div>'+
-    onDuty.map(function(u){ return '<div style="padding:4px 0;">● '+escapeHtml(u.callsign)+' '+escapeHtml(u.name)+'</div>'; }).join("")+
-  '</div>';
+                                                                                                                                                     onDuty.map(function(u){ return '<div style="padding:4px 0;">● '+escapeHtml(u.callsign)+' '+escapeHtml(u.name)+'</div>'; }).join("")+
+    '</div>';
   html += '<div class="card"><div style="font-weight:700;">#'+escapeHtml(ch.name)+'</div><div class="small-muted" style="margin-bottom:10px;">'+escapeHtml(ch.desc||"")+' · '+msgs.length+' messages</div>'+
     '<div id="chatMsgs" style="max-height:420px;overflow-y:auto;margin-bottom:12px;">'+
     (msgs.length? msgs.map(function(m){
@@ -351,9 +427,10 @@ function renderChat(){
     '<div style="display:flex;gap:8px;margin-bottom:8px;"><label class="chk-row" style="margin:0;"><input type="checkbox" id="boloChk"> Mark as BOLO</label></div>'+
     '<div style="display:flex;gap:8px;"><textarea id="chatInput" rows="2" placeholder="Message #'+escapeHtml(ch.name)+'…" style="flex:1;"></textarea><button class="btn primary" data-action="sendChat">Send</button></div>'+
     '<div class="small-muted" style="margin-top:6px;">Enter sends, Shift+Enter starts a new line. BOLOs are copied into the activity log automatically.</div>'+
-  '</div></div>';
+    '</div></div>';
   return html;
 }
+
 function wireChat(){
   document.querySelectorAll("[data-chan]").forEach(function(b){ b.addEventListener("click", function(){ uiState.chatChannel=b.getAttribute("data-chan"); render(); }); });
   var addChan = document.querySelector('[data-action="addChan"]');
@@ -406,21 +483,22 @@ function renderTrucks(){
     '<label class="field"><span class="lbl">Driver Name <span class="req">*</span></span><input type="text" name="driver" required></label>'+
     '<div class="grid2"><label class="field"><span class="lbl">Trailer # <span class="req">*</span></span><input type="text" name="trailer" required></label>'+
     '<label class="field"><span class="lbl">Tractor #</span><input type="text" name="tractor"></label></div>'+
-    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
+    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
     '<label class="field"><span class="lbl">Purpose</span><select name="purpose"><option>Delivery</option><option>Pickup</option><option>Service</option><option>Other</option></select></label>'+
     '<div class="grid2"><label class="field"><span class="lbl">Dock / Door</span><input type="text" name="dock"></label><label class="field"><span class="lbl">Seal #</span><input type="text" name="seal"></label></div>'+
     '<label class="field"><span class="lbl">BOL / PO #</span><input type="text" name="bol"></label>'+
     '<label class="field"><span class="lbl">Driver License / CDL</span><input type="text" name="license"></label>'+
     '<label class="field"><span class="lbl">Notes</span><textarea name="notes" rows="2"></textarea></label>'+
     '<button type="submit" class="btn primary" style="width:100%;">Check in — time in now</button></form></div>';
-  html += '<div class="card"><div class="tabs">'+["onsite","departed","all"].map(function(v){return '<button class="'+(view===v?"active":"")+'" data-truckview="'+v+'">'+(v==="onsite"?"On site ("+onSite.length+")":v==="departed"?"Departed":"All")+'</button>';}).join("")+'</div>';
+
+html += '<div class="card"><div class="tabs">'+["onsite","departed","all"].map(function(v){return '<button class="'+(view===v?"active":"")+'" data-truckview="'+v+'">'+(v==="onsite"?"On site ("+onSite.length+")":v==="departed"?"Departed":"All")+'</button>';}).join("")+'</div>';
   if(!list.length){ html += '<div class="empty-state">No trucks in this view.</div>'; }
   else {
     html += list.map(function(t){
       return '<div class="list-item"><div class="top"><span>'+escapeHtml(t.company)+' / '+escapeHtml(t.driver)+'</span><span>'+(t.timeOut?"OUT "+fmtShort(t.timeOut):"IN "+fmtShort(t.timeIn))+'</span></div>'+
         '<div class="meta">Trailer '+escapeHtml(t.trailer)+' · '+escapeHtml(t.post||"—")+' · '+escapeHtml(t.purpose||"")+'</div>'+
         (!t.timeOut? '<button class="btn sm" style="margin-top:6px;" data-truck-out="'+t.id+'">Check out</button>' : '<div class="small-muted">On site '+Math.round((new Date(t.timeOut)-new Date(t.timeIn))/60000)+'m</div>')+
-      '</div>';
+        '</div>';
     }).join("");
   }
   html += '</div></div>';
@@ -435,8 +513,8 @@ function wireTrucks(){
     var postId = fd.get("post");
     var post = STATE.posts.find(function(p){return p.id===postId;});
     var t = {id:uid("trk"), company:fd.get("company"), driver:fd.get("driver"), trailer:fd.get("trailer"), tractor:fd.get("tractor")||"",
-      post: postId?(postId+" "+(post?post.name:"")):"", purpose:fd.get("purpose"), dock:fd.get("dock")||"", seal:fd.get("seal")||"",
-      bol:fd.get("bol")||"", license:fd.get("license")||"", notes:fd.get("notes")||"", timeIn:nowIso(), timeOut:null};
+             post: postId?(postId+" "+(post?post.name:"")):"", purpose:fd.get("purpose"), dock:fd.get("dock")||"", seal:fd.get("seal")||"",
+             bol:fd.get("bol")||"", license:fd.get("license")||"", notes:fd.get("notes")||"", timeIn:nowIso(), timeOut:null};
     STATE.trucks.unshift(t);
     logActivity("TRUCK", session.callsign, "Truck IN — "+t.company+" / driver "+t.driver+" / trailer "+t.trailer+(postId?" @ "+postId:""));
     form.reset(); persist(function(){ return DB.trucks.insert(t); }, "truck "+t.company);
@@ -449,5 +527,5 @@ function wireTrucks(){
       logActivity("TRUCK", session.callsign, "Truck OUT — "+t.company+" / driver "+t.driver+" / trailer "+t.trailer+" — on site "+mins+"m");
       persist(function(){ return DB.trucks.checkOut(t.id, t.timeOut); }, "truck "+t.company+" checkout");
     });
-  });
+    });
 }
