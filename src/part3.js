@@ -642,7 +642,7 @@ account from the Users tab's "Map access" control, src/part3.js renderUsers/wire
 Supervisor assigned to a site only sees that site's guards, matched against which post each
 guard's unit is currently posted to (units[].post). Left unassigned — the default — an
 account sees every site, i.e. Dispatch/Admin. */
-var RIDGECREST_CENTER = [35.6225, -117.6709]; // Ridgecrest, CA — default view before any pings arrive
+var DEFAULT_MAP_CENTER = [33.7490, -84.3880]; // Atlanta, GA metro area — default view before any pings arrive (guards work the Atlanta metro area, not Ridgecrest, CA)
 var _liveMapView = null; // remembers pan/zoom across re-renders (the view's DOM, and the map with it, is rebuilt on every render() call)
 function mapScopePostId(){ return (session && session.assignedPostId) || ""; }
 function mapScopeLabel(postId){
@@ -728,6 +728,6 @@ function wireMap(){
   }
   if(_liveMapView){ map.setView(_liveMapView.center, _liveMapView.zoom); }
   else if(pts.length){ map.fitBounds(pts, {padding:[30,30], maxZoom:16}); }
-  else { map.setView(RIDGECREST_CENTER, 12); }
+  else { map.setView(DEFAULT_MAP_CENTER, 10); }
   map.on("moveend", function(){ _liveMapView = {center: map.getCenter(), zoom: map.getZoom()}; });
 }
