@@ -187,20 +187,32 @@
   on an interval and upserts it to guard_locations, which feeds the Live Map tab that Dispatch/
   Supervisors/Admins see. Never blocks or errors the rest of the app if location is denied. */
  var liveTrackTimer = null;
-  function startLiveTracking(){
-    if(liveTrackTimer || !session || session.role!=="GUARD" || !navigator.geolocation) return;
-    function ping(){
-      if(!session || session.role!=="GUARD" || !DB || !DB.configured) return;
-      navigator.geolocation.getCurrentPosition(function(pos){
-        DB.locations.upsert(session.callsign, {lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy})
-        .catch(function(e){ console.warn("live location update failed", e); });
-      }, function(){ /* denied/unavailable this round — quietly try again next interval */ },
-                                               { enableHighAccuracy:true, timeout:8000, maximumAge:20000 });
-    }
-    ping();
-    liveTrackTimer = setInterval(ping, 45000);
-  }
-  function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); liveTrackTimer=null; } }
+/* Tracked for ANY signed-in account -- Supervisor or Guard -- as long as their linked field
+unit (currentUnit()) is actively working: AVAILABLE, ENROUTE, or ONSCENE. OFFDUTY units, and
+any account with no linked unit at all (a pure dispatch/admin console with nothing posted to
+it), are never tracked. The timer itself starts for any signed-in session and re-checks this
+on every tick, so a status change (e.g. going OFFDUTY -> AVAILABLE) is picked up automatically
+without needing to sign out/in again. */
+var TRACKED_UNIT_STATUSES = {AVAILABLE:1, ENROUTE:1, ONSCENE:1};
+function trackableUnit(){
+var u = currentUnit();
+return (u && TRACKED_UNIT_STATUSES[u.status]) ? u : null;
+}
+function startLiveTracking(){
+if(liveTrackTimer || !session || !navigator.geolocation) return;
+function ping(){
+var u = trackableUnit();
+if(!u || !DB || !DB.configured) return;
+navigator.geolocation.getCurrentPosition(function(pos){
+DB.locations.upsert(u.callsign, {lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy})
+.catch(function(e){ console.warn("live location update failed", e); });
+}, function(){ /* denied/unavailable this round -- quietly try again next interval */ },
+{ enableHighAccuracy:true, timeout:8000, maximumAge:20000 });
+}
+ping();
+liveTrackTimer = setInterval(ping, 45000);
+}
+function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); liveTrackTimer=null; } }
 
  /* ---------------- router / shell ---------------- */
  window.addEventListener("hashchange", function(){
@@ -1661,7 +1673,7 @@ account from the Users tab's "Map access" control, src/part3.js renderUsers/wire
 Supervisor assigned to a site only sees that site's guards, matched against which post each
 guard's unit is currently posted to (units[].post). Left unassigned — the default — an
 account sees every site, i.e. Dispatch/Admin. */
-var RIDGECREST_CENTER = [35.6225, -117.6709]; // Ridgecrest, CA — default view before any pings arrive
+var DEFAULT_MAP_CENTER = [33.7490, -84.3880]; // Atlanta, GA metro area — default view before any pings arrive (guards work the Atlanta metro area, not Ridgecrest, CA)
 var _liveMapView = null; // remembers pan/zoom across re-renders (the view's DOM, and the map with it, is rebuilt on every render() call)
 function mapScopePostId(){ return (session && session.assignedPostId) || ""; }
 function mapScopeLabel(postId){
@@ -1747,7 +1759,7 @@ function wireMap(){
   }
   if(_liveMapView){ map.setView(_liveMapView.center, _liveMapView.zoom); }
   else if(pts.length){ map.fitBounds(pts, {padding:[30,30], maxZoom:16}); }
-  else { map.setView(RIDGECREST_CENTER, 12); }
+  else { map.setView(DEFAULT_MAP_CENTER, 10); }
   map.on("moveend", function(){ _liveMapView = {center: map.getCenter(), zoom: map.getZoom()}; });
 }
 
