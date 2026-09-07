@@ -187,20 +187,32 @@
   on an interval and upserts it to guard_locations, which feeds the Live Map tab that Dispatch/
   Supervisors/Admins see. Never blocks or errors the rest of the app if location is denied. */
  var liveTrackTimer = null;
-  function startLiveTracking(){
-    if(liveTrackTimer || !session || session.role!=="GUARD" || !navigator.geolocation) return;
-    function ping(){
-      if(!session || session.role!=="GUARD" || !DB || !DB.configured) return;
-      navigator.geolocation.getCurrentPosition(function(pos){
-        DB.locations.upsert(session.callsign, {lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy})
-        .catch(function(e){ console.warn("live location update failed", e); });
-      }, function(){ /* denied/unavailable this round — quietly try again next interval */ },
-                                               { enableHighAccuracy:true, timeout:8000, maximumAge:20000 });
-    }
-    ping();
-    liveTrackTimer = setInterval(ping, 45000);
-  }
-  function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); liveTrackTimer=null; } }
+/* Tracked for ANY signed-in account -- Supervisor or Guard -- as long as their linked field
+unit (currentUnit()) is actively working: AVAILABLE, ENROUTE, or ONSCENE. OFFDUTY units, and
+any account with no linked unit at all (a pure dispatch/admin console with nothing posted to
+it), are never tracked. The timer itself starts for any signed-in session and re-checks this
+on every tick, so a status change (e.g. going OFFDUTY -> AVAILABLE) is picked up automatically
+without needing to sign out/in again. */
+var TRACKED_UNIT_STATUSES = {AVAILABLE:1, ENROUTE:1, ONSCENE:1};
+function trackableUnit(){
+var u = currentUnit();
+return (u && TRACKED_UNIT_STATUSES[u.status]) ? u : null;
+}
+function startLiveTracking(){
+if(liveTrackTimer || !session || !navigator.geolocation) return;
+function ping(){
+var u = trackableUnit();
+if(!u || !DB || !DB.configured) return;
+navigator.geolocation.getCurrentPosition(function(pos){
+DB.locations.upsert(u.callsign, {lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy})
+.catch(function(e){ console.warn("live location update failed", e); });
+}, function(){ /* denied/unavailable this round -- quietly try again next interval */ },
+{ enableHighAccuracy:true, timeout:8000, maximumAge:20000 });
+}
+ping();
+liveTrackTimer = setInterval(ping, 45000);
+}
+function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); liveTrackTimer=null; } }
 
  /* ---------------- router / shell ---------------- */
  window.addEventListener("hashchange", function(){
