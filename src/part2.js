@@ -1,7 +1,7 @@
 /* ---------------- DISPATCH ---------------- */
 function renderDispatch(){
   var C = window.__CAD;
-  var queue = STATE.calls.filter(function(c){ return c.status!=="CLEARED"; }).sort(function(a,b){ return a.priority-b.priority || new Date(a.createdAt)-new Date(b.createdAt); });
+  var queue = STATE.calls.filter(function(c){ return c.status!=="CLEARED" && visibleToMe(c.post); }).sort(function(a,b){ return a.priority-b.priority || new Date(a.createdAt)-new Date(b.createdAt); });
   var html = '<div class="three-col">';
 
 // New call intake
@@ -514,11 +514,11 @@ function renderRadio(){
 
 /* ---------------- TRUCK LOG ---------------- */
 function renderTrucks(){
-  var onSite = STATE.trucks.filter(function(t){return !t.timeOut;});
-  var departed = STATE.trucks.filter(function(t){return t.timeOut;});
+  var onSite = STATE.trucks.filter(function(t){return !t.timeOut && visibleToMe(t.post);});
+  var departed = STATE.trucks.filter(function(t){return t.timeOut && visibleToMe(t.post);});
   var view = uiState.truckView||"onsite";
-  var list = view==="onsite"?onSite:view==="departed"?departed:STATE.trucks;
-  var html = '<div class="section-head"><h2>Truck Log — Gate Register</h2><span class="meta">'+onSite.length+' on site · '+STATE.trucks.filter(function(t){return t.timeIn && t.timeIn.slice(0,10)===new Date().toISOString().slice(0,10);}).length+' today</span></div>';
+  var list = view==="onsite"?onSite:view==="departed"?departed:STATE.trucks.filter(function(t){return visibleToMe(t.post);});
+  var html = '<div class="section-head"><h2>Truck Log — Gate Register</h2><span class="meta">'+onSite.length+' on site · '+STATE.trucks.filter(function(t){return visibleToMe(t.post) && t.timeIn && t.timeIn.slice(0,10)===new Date().toISOString().slice(0,10);}).length+' today</span></div>';
   html += '<div class="two-col">';
   html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">Gate Check-In</div><form id="truckForm">'+
     '<label class="field"><span class="lbl">Trucking Company <span class="req">*</span></span><input type="text" name="company" required></label>'+
