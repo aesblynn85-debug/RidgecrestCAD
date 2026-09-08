@@ -539,7 +539,7 @@ function renderUsers(){
   var pinCard = '<div class="card" style="margin-bottom:16px;"><div class="section-head"><h2>Change My PIN</h2></div>'+'<div class="small-muted" style="margin-bottom:10px;">Update the PIN for your own account ('+escapeHtml(session.callsign)+'). This does not affect any other account.</div>'+'<div class="grid2"><label class="field"><span class="lbl">Current PIN</span><input id="pinCurrent" type="password" maxlength="6" inputmode="numeric" placeholder="pin"></label>'+'<label class="field"><span class="lbl">New PIN</span><input id="pinNew" type="password" maxlength="6" inputmode="numeric" placeholder="pin"></label></div>'+'<label class="field"><span class="lbl">Confirm New PIN</span><input id="pinConfirm" type="password" maxlength="6" inputmode="numeric" placeholder="pin"></label>'+'<button class="btn primary" data-action="changeMyPin" style="margin-top:6px;">Update PIN</button>'+'</div>';
   var active = STATE.users.filter(function(u){return u.active;}).length;
   var html = pinCard + '<div class="card"><div class="section-head"><h2>User Accounts</h2><span class="meta">'+active+' active / '+STATE.users.length+' total</span>'+
-    (session.role==="SUPV"? '<button class="btn sm primary" data-action="addUser">+ Add account</button>' : '')+
+    (session.role==="SUPV" ? '<button class="btn sm primary" data-action="addUser">+ Add account</button> <button class="btn sm" data-action="addClient">+ Add client account</button>' : '')+
     '</div>'+
     '<div class="small-muted" style="margin-bottom:14px;">Every account signs in with a callsign and a PIN. Guards can read the board and report — post to Patrol Chat, scan checkpoints, log trucks and attach photos. Supervisors add the roster, post directory, these accounts and the data reset. A supervisor account\'s <b>Map access</b> controls what it sees on the Live Map: a specific site limits it to that site\'s guards (Supervisor); All Sites shows everyone (Dispatch/Admin).</div>';
   html += STATE.users.map(function(u){
@@ -555,6 +555,11 @@ function renderUsers(){
          STATE.posts.map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(current===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
          '</select></div>')
         : ('<div class="small-muted" style="margin-top:4px;">Map access: '+escapeHtml(currentLabel)+'</div>');
+    }
+    else if(u.role==="CLIENT"){
+      var siteId = u.assignedPostId||"";
+      var site = siteId ? STATE.posts.find(function(p){return p.id===siteId;}) : null;
+      mapAccess = '<div class="small-muted" style="margin-top:4px;">Site: '+(site?escapeHtml(site.id+" \u2014 "+site.name):"Not assigned")+'</div>';
     }
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid hsl(var(--border)/.6);">'+
       '<div><div style="font-weight:700;">'+escapeHtml(u.callsign)+' <span class="pill blue">'+u.role+'</span>'+(u.callsign===session.callsign?' <span class="pill ok">YOU</span>':'')+'</div>'+
@@ -583,6 +588,27 @@ function wireUsers(){
     }
     STATE.users.push(u);
     logActivity("AUTH", session.callsign, session.name+" created guard account "+cs+" ("+name+")");
+    persist();
+  });
+
+  var addClientBtn = document.querySelector('[data-action="addClient"]');
+  if(addClientBtn) addClientBtn.addEventListener("click", async function(){
+    var cs = prompt("New client username (e.g. acme.shipping)"); if(!cs) return;
+    cs = cs.trim();
+    var name = prompt("Employee full name")||""; if(!name) return;
+    var siteList = STATE.posts.map(function(p){return p.id+" — "+p.name;}).join("\n");
+    var postId = prompt("Assign to which site? Enter the exact site ID.\n\nAvailable sites:\n"+siteList)||"";
+    postId = postId.trim();
+    if(!postId || !STATE.posts.some(function(p){return p.id===postId;})){ toast("A valid site ID is required for a client account."); return; }
+    if(STATE.users.some(function(u){return u.callsign===cs;})){ toast("Username "+cs+" already exists."); return; }
+    var pin = prompt("Temporary password for "+name+" (they'll be asked to change it at first sign-in)")||"1234";
+    var u = {callsign:cs, name:name, role:"CLIENT", title:"Client — Shipping/Receiving", active:true, lastSignIn:null, mustChangePin:true, assignedPostId:postId};
+    if(DB.configured){
+      try{ await DB.auth.createClient(cs, name, pin, postId); }
+      catch(e){ toast("Couldn't create the account: "+(e.message||e)); return; }
+    }
+    STATE.users.push(u);
+    logActivity("AUTH", session.callsign, session.name+" created client account "+cs+" ("+name+") for site "+postId);
     persist();
   });
 
