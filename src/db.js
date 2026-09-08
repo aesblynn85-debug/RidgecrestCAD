@@ -238,6 +238,7 @@ re-publishing the entire app state on every change. */
  async function verifyPin(callsign, pin){ must(); return chk(await sb.rpc("verify_pin", {p_callsign:callsign, p_pin:pin})); }
    async function setPin(callsign, newPin){ must(); chk(await sb.rpc("set_pin", {p_callsign:callsign, p_new_pin:newPin})); }
    async function createGuard(callsign, name, pin){ must(); chk(await sb.rpc("create_guard", {p_callsign:callsign, p_name:name, p_pin:pin||"1234"})); }
+   async function createClient(username, name, pin, postId){ must(); chk(await sb.rpc("create_client", {p_username:username, p_name:name, p_pin:pin||"1234", p_post_id:postId||null})); }
    async function resetPin(callsign){ must(); chk(await sb.rpc("reset_pin", {p_callsign:callsign})); }
    async function recordSignIn(callsign){ must(); chk(await sb.rpc("record_sign_in", {p_callsign:callsign})); }
    async function nextCounter(key){ must(); return chk(await sb.rpc("next_counter", {counter_key:key})); }
@@ -263,7 +264,7 @@ re-publishing the entire app state on every change. */
  var DB = {
       configured: CONFIGURED,
       loadAllState: loadAllState,
-      auth: {verifyPin:verifyPin, setPin:setPin, createGuard:createGuard, resetPin:resetPin, recordSignIn:recordSignIn,
+      auth: {verifyPin:verifyPin, setPin:setPin, createGuard:createGuard, createClient:createClient, resetPin:resetPin, recordSignIn:recordSignIn,
                  setUserActive:setUserActive, setAssignedPost:setAssignedPost},
       counters: {next:nextCounter},
       calls: {
