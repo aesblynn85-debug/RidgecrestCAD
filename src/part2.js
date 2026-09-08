@@ -146,6 +146,18 @@ function wireDispatch(){
   var clearBtn = document.querySelector('[data-action="clearIntake"]');
   if(clearBtn) clearBtn.addEventListener("click", function(){ form.reset(); });
 
+wireCallModal();
+  document.querySelectorAll(".unitStatusSel").forEach(function(sel){
+    sel.addEventListener("change", function(){
+      var cs=sel.getAttribute("data-unit"); var u=STATE.units.find(function(x){return x.callsign===cs;});
+      var from=u.status; u.status=sel.value; u.statusSince=nowIso();
+      logActivity("UNIT","DISPATCH","Unit "+cs+" status "+from+" → "+sel.value);
+      persist(function(){ return DB.units.update(cs, {status:u.status, status_since:u.statusSince}); }, "unit "+cs+" status");
+    });
+  });
+}
+
+function wireCallModal(){
 document.querySelectorAll("[data-open-call]").forEach(function(el){
   el.addEventListener("click", function(){ uiState.openCallId = el.getAttribute("data-open-call"); render(); });
 });
@@ -233,14 +245,44 @@ document.querySelectorAll('[data-action="unassignUnit"]').forEach(function(b){
       ]); }, "unassign "+cs+" from "+id);
   });
 });
-  document.querySelectorAll(".unitStatusSel").forEach(function(sel){
-    sel.addEventListener("change", function(){
-      var cs=sel.getAttribute("data-unit"); var u=STATE.units.find(function(x){return x.callsign===cs;});
-      var from=u.status; u.status=sel.value; u.statusSince=nowIso();
-      logActivity("UNIT","DISPATCH","Unit "+cs+" status "+from+" → "+sel.value);
-      persist(function(){ return DB.units.update(cs, {status:u.status, status_since:u.statusSince}); }, "unit "+cs+" status");
-    });
+}
+
+function renderCallHistory(){
+  var C = window.__CAD;
+  var filter = uiState.callHistoryFilter || "ALL";
+  var list = STATE.calls.filter(function(c){
+    if(filter==="ACTIVE") return c.status!=="CLEARED";
+    if(filter==="CLEARED") return c.status==="CLEARED";
+    return true;
+  }).sort(function(a,b){ return new Date(b.createdAt)-new Date(a.createdAt); });
+  var html = '<div class="card"><div class="section-head"><h2>Call History</h2><span class="meta">'+list.length+' of '+STATE.calls.length+'</span></div>'+
+    '<div class="priobtns" id="callHistFilter" style="margin-bottom:10px;">'+
+    [["ALL","All"],["ACTIVE","Active"],["CLEARED","Cleared"]].map(function(f){ return '<button type="button" data-f="'+f[0]+'" class="'+(filter===f[0]?"active":"")+'">'+f[1]+'</button>'; }).join("")+
+    '</div>';
+  if(list.length===0){
+    html += '<div class="empty-state">No calls match this filter.</div>';
+  } else {
+    html += list.map(function(c){
+      return '<div class="list-item" data-open-call="'+c.id+'">'+
+        '<div class="top"><span>#'+c.id+' · P'+c.priority+' '+escapeHtml(c.code||"")+'</span><span>'+fmtShort(c.createdAt)+'</span></div>'+
+        '<div class="subj">'+escapeHtml(c.nature||c.code||"")+'</div>'+
+        '<div class="meta">@ '+escapeHtml(c.post||"—")+' · <span class="pill '+(c.status==="DISPATCHED"?"blue":c.status==="ENROUTE"?"blue":c.status==="ONSCENE"?"ok":"muted")+'">'+c.status+'</span>'+((c.assignedUnits&&c.assignedUnits.length)?" · "+escapeHtml(c.assignedUnits.join(", ")):"")+'</div>'+
+        '</div>';
+    }).join("");
+  }
+  html += '</div>';
+  if(uiState.openCallId){
+    var oc = STATE.calls.find(function(c){ return c.id===uiState.openCallId; });
+    if(oc) html += renderCallModal(oc);
+  }
+  return html;
+}
+
+function wireCallHistory(){
+  document.querySelectorAll("#callHistFilter button").forEach(function(b){
+    b.addEventListener("click", function(){ uiState.callHistoryFilter = b.getAttribute("data-f"); render(); });
   });
+  wireCallModal();
 }
 
 /* ---------------- UNITS ---------------- */
