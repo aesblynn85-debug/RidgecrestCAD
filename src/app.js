@@ -105,6 +105,27 @@
  function guardAssignedSiteIds(callsign){
    return (STATE.unitSites||[]).filter(function(x){return x.callsign===callsign;}).map(function(x){return x.postId;});
  }
+
+  /* Site-scoped visibility for a signed-in GUARD: calls, truck logs, parking violations,
+  guard notes, and field reports should only show records for a site the guard is assigned
+  to. Returns null (no restriction) for supervisors/dispatch, and also fails open (no
+  restriction) for a guard with no assigned sites yet so they are not left seeing nothing
+  before assignments are configured. */
+  function guardVisiblePostIds(){
+    if(!session || session.role!=="GUARD") return null;
+    var mine = guardAssignedSiteIds(session.callsign);
+    return mine.length ? mine : null;
+  }
+
+  /* Given a record's stored "post" string (format: "<postId> <post name>"), returns whether
+  the signed-in user is allowed to see it. Always true for supervisors/dispatch. */
+  function visibleToMe(post){
+    var ids = guardVisiblePostIds();
+    if(!ids) return true;
+    if(!post) return false;
+    var pid = post.split(" ")[0];
+    return ids.indexOf(pid) !== -1;
+  }
   /* The site a signed-in GUARD is currently working this shift (units[].post for their own
   unit) — used to auto-fill the Post/Site field when they self-initiate a call, report,
   parking violation, or truck log (src/part2.js, src/part3.js). Blank for supervisors/dispatch,
@@ -194,7 +215,7 @@ any account with no linked unit at all (a pure dispatch/admin console with nothi
 it), are never tracked. The timer itself starts for any signed-in session and re-checks this
 on every tick, so a status change (e.g. going OFFDUTY -> AVAILABLE) is picked up automatically
 without needing to sign out/in again. */
-var TRACKED_UNIT_STATUSES = {AVAILABLE:1, ENROUTE:1, ONSCENE:1};
+var TRACKED_UNIT_STATUSES = {AVAILABLE:1, DISPATCHED:1, ENROUTE:1, ONSCENE:1};
 function trackableUnit(){
 var u = currentUnit();
 return (u && TRACKED_UNIT_STATUSES[u.status]) ? u : null;
