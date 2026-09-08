@@ -30,7 +30,7 @@ create extension if not exists "pgcrypto" with schema public;
 create table if not exists users (
     callsign text primary key,
     name text not null,
-    role text not null check (role in ('SUPV','GUARD')),
+    role text not null check (role in ('SUPV','GUARD','CLIENT')),
     title text default '',
     pin_hash text not null, -- bcrypt hash, never plaintext
   must_change_pin boolean not null default false,
@@ -441,6 +441,14 @@ create or replace function create_guard(p_callsign text, p_name text, p_pin text
 returns void language sql security definer set search_path = public, extensions as $$
   insert into users (callsign, name, role, title, pin_hash, must_change_pin, active)
   values (p_callsign, p_name, 'GUARD', 'Security Guard', crypt(p_pin, gen_salt('bf')), true, true);
+$$;
+
+-- Client accounts (shipping/receiving staff): username + password login, scoped to exactly
+-- one site via assigned_post_id. See guardVisiblePostIds()/visibleToMe() in src/app.js.
+create or replace function create_client(p_username text, p_name text, p_pin text default '1234', p_post_id text default null)
+returns void language sql security definer set search_path = public, extensions as $$
+  insert into users (callsign, name, role, title, pin_hash, must_change_pin, active, assigned_post_id)
+  values (p_username, p_name, 'CLIENT', 'Client — Shipping/Receiving', crypt(p_pin, gen_salt('bf')), true, true, p_post_id);
 $$;
 
 create or replace function reset_pin(p_callsign text)
