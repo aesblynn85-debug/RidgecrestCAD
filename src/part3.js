@@ -195,7 +195,7 @@ function renderReports(){
     '<button class="btn sm" data-action="reportsCsv">⭳ Reports CSV</button></div>';
   html += '<div class="tabs">'+
     '<button class="'+(tab==="incident"?"active":"")+'" data-reptab="incident">Incident Reports '+myReports.length+'</button>'+
-    '<button class="'+(tab==="police"?"active":"")+'" data-reptab="police">Police On Property '+STATE.policeOnProperty.filter(function(p){return !p.departedAt;}).length+' now</button>'+
+    '<button class="'+(tab==="police"?"active":"")+'" data-reptab="police">Police On Property '+STATE.policeOnProperty.filter(function(p){return !p.departedAt && visibleToMe(p.post);}).length+' now</button>'+
     '<button class="'+(tab==="self"?"active":"")+'" data-reptab="self">Self-Initiated Call</button>'+
     '</div>';
   if(tab==="police"){ html += renderPoliceOnProperty(); return html; }
@@ -357,10 +357,10 @@ var bd = document.querySelector("[data-close-report]");
 
 /* ---------------- POLICE ON PROPERTY (tab within Field Reports) ---------------- */
 function renderPoliceOnProperty(){
-  var onSite = STATE.policeOnProperty.filter(function(p){return !p.departedAt;});
-  var past = STATE.policeOnProperty.filter(function(p){return p.departedAt;});
+  var onSite = STATE.policeOnProperty.filter(function(p){return !p.departedAt && visibleToMe(p.post);});
+  var past = STATE.policeOnProperty.filter(function(p){return p.departedAt && visibleToMe(p.post);});
   var view = uiState.policeView||"onsite";
-  var list = view==="onsite"?onSite:view==="past"?past:STATE.policeOnProperty;
+  var list = view==="onsite"?onSite:view==="past"?past:STATE.policeOnProperty.filter(function(p){return visibleToMe(p.post);});
   var html = '<div class="two-col">';
   html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">Log Police Arrival</div><form id="policeForm">'+
     '<label class="field"><span class="lbl">Agency <span class="req">*</span></span><input type="text" name="agency" required placeholder="Ridgecrest PD, county sheriff…"></label>'+
