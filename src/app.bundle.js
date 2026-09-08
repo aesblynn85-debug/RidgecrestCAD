@@ -295,7 +295,6 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
     statsHtml+
     '<div class="clock"><div id="clockNow">'+fmtClock()+'</div><div>'+fmtDate()+'</div></div>'+
     '</div>'+
-    '</div>'+
     '<div id="view"></div>'+
     '</div>';
 
