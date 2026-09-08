@@ -105,6 +105,27 @@
  function guardAssignedSiteIds(callsign){
    return (STATE.unitSites||[]).filter(function(x){return x.callsign===callsign;}).map(function(x){return x.postId;});
  }
+
+  /* Site-scoped visibility for a signed-in GUARD: calls, truck logs, parking violations,
+  guard notes, and field reports should only show records for a site the guard is assigned
+  to. Returns null (no restriction) for supervisors/dispatch, and also fails open (no
+  restriction) for a guard with no assigned sites yet so they are not left seeing nothing
+  before assignments are configured. */
+  function guardVisiblePostIds(){
+    if(!session || session.role!=="GUARD") return null;
+    var mine = guardAssignedSiteIds(session.callsign);
+    return mine.length ? mine : null;
+  }
+
+  /* Given a record's stored "post" string (format: "<postId> <post name>"), returns whether
+  the signed-in user is allowed to see it. Always true for supervisors/dispatch. */
+  function visibleToMe(post){
+    var ids = guardVisiblePostIds();
+    if(!ids) return true;
+    if(!post) return false;
+    var pid = post.split(" ")[0];
+    return ids.indexOf(pid) !== -1;
+  }
   /* The site a signed-in GUARD is currently working this shift (units[].post for their own
   unit) — used to auto-fill the Post/Site field when they self-initiate a call, report,
   parking violation, or truck log (src/part2.js, src/part3.js). Blank for supervisors/dispatch,
@@ -194,7 +215,7 @@ any account with no linked unit at all (a pure dispatch/admin console with nothi
 it), are never tracked. The timer itself starts for any signed-in session and re-checks this
 on every tick, so a status change (e.g. going OFFDUTY -> AVAILABLE) is picked up automatically
 without needing to sign out/in again. */
-var TRACKED_UNIT_STATUSES = {AVAILABLE:1, ENROUTE:1, ONSCENE:1};
+var TRACKED_UNIT_STATUSES = {AVAILABLE:1, DISPATCHED:1, ENROUTE:1, ONSCENE:1};
 function trackableUnit(){
 var u = currentUnit();
 return (u && TRACKED_UNIT_STATUSES[u.status]) ? u : null;
@@ -503,7 +524,7 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
   /* ---------------- DISPATCH ---------------- */
 function renderDispatch(){
   var C = window.__CAD;
-  var queue = STATE.calls.filter(function(c){ return c.status!=="CLEARED"; }).sort(function(a,b){ return a.priority-b.priority || new Date(a.createdAt)-new Date(b.createdAt); });
+  var queue = STATE.calls.filter(function(c){ return c.status!=="CLEARED" && visibleToMe(c.post); }).sort(function(a,b){ return a.priority-b.priority || new Date(a.createdAt)-new Date(b.createdAt); });
   var html = '<div class="three-col">';
 
 // New call intake
@@ -1016,11 +1037,11 @@ function renderRadio(){
 
 /* ---------------- TRUCK LOG ---------------- */
 function renderTrucks(){
-  var onSite = STATE.trucks.filter(function(t){return !t.timeOut;});
-  var departed = STATE.trucks.filter(function(t){return t.timeOut;});
+  var onSite = STATE.trucks.filter(function(t){return !t.timeOut && visibleToMe(t.post);});
+  var departed = STATE.trucks.filter(function(t){return t.timeOut && visibleToMe(t.post);});
   var view = uiState.truckView||"onsite";
-  var list = view==="onsite"?onSite:view==="departed"?departed:STATE.trucks;
-  var html = '<div class="section-head"><h2>Truck Log — Gate Register</h2><span class="meta">'+onSite.length+' on site · '+STATE.trucks.filter(function(t){return t.timeIn && t.timeIn.slice(0,10)===new Date().toISOString().slice(0,10);}).length+' today</span></div>';
+  var list = view==="onsite"?onSite:view==="departed"?departed:STATE.trucks.filter(function(t){return visibleToMe(t.post);});
+  var html = '<div class="section-head"><h2>Truck Log — Gate Register</h2><span class="meta">'+onSite.length+' on site · '+STATE.trucks.filter(function(t){return visibleToMe(t.post) && t.timeIn && t.timeIn.slice(0,10)===new Date().toISOString().slice(0,10);}).length+' today</span></div>';
   html += '<div class="two-col">';
   html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">Gate Check-In</div><form id="truckForm">'+
     '<label class="field"><span class="lbl">Trucking Company <span class="req">*</span></span><input type="text" name="company" required></label>'+
@@ -1077,10 +1098,10 @@ function wireTrucks(){
 /* ---------------- PARKING LOT VIOLATIONS ---------------- */
 function renderParking(){
   var C = window.__CAD;
-  var list = STATE.parkingViolations.slice().sort(function(a,b){ return new Date(b.occurred)-new Date(a.occurred); });
-  var openCount = STATE.parkingViolations.filter(function(v){return v.status!=="CLOSED";}).length;
+  var list = STATE.parkingViolations.filter(function(v){return visibleToMe(v.post);}).sort(function(a,b){ return new Date(b.occurred)-new Date(a.occurred); });
+  var openCount = STATE.parkingViolations.filter(function(v){return visibleToMe(v.post) && v.status!=="CLOSED";}).length;
   var today = new Date().toISOString().slice(0,10);
-  var todayCount = STATE.parkingViolations.filter(function(v){return (v.occurred||"").slice(0,10)===today;}).length;
+  var todayCount = STATE.parkingViolations.filter(function(v){return visibleToMe(v.post) && (v.occurred||"").slice(0,10)===today;}).length;
   var html = '<div class="section-head"><h2>Parking Lot Violations</h2><span class="meta">'+openCount+' open · '+todayCount+' today</span>'+
     '<button class="btn sm" data-action="parkingCsv">⭳ CSV</button></div>';
   html += '<div class="two-col">';
@@ -1266,10 +1287,11 @@ function downloadCsv(filename, rows){
 function renderReports(){
   var C = window.__CAD;
   var tab = uiState.reportsTab || "incident";
-  var html = '<div class="section-head"><h2>Field Reports</h2><span class="meta">'+STATE.reports.length+' reports</span>'+
+  var myReports = STATE.reports.filter(function(r){return visibleToMe(r.post);});
+  var html = '<div class="section-head"><h2>Field Reports</h2><span class="meta">'+myReports.length+' reports</span>'+
     '<button class="btn sm" data-action="reportsCsv">⭳ Reports CSV</button></div>';
   html += '<div class="tabs">'+
-    '<button class="'+(tab==="incident"?"active":"")+'" data-reptab="incident">Incident Reports '+STATE.reports.length+'</button>'+
+    '<button class="'+(tab==="incident"?"active":"")+'" data-reptab="incident">Incident Reports '+myReports.length+'</button>'+
     '<button class="'+(tab==="police"?"active":"")+'" data-reptab="police">Police On Property '+STATE.policeOnProperty.filter(function(p){return !p.departedAt;}).length+' now</button>'+
     '<button class="'+(tab==="self"?"active":"")+'" data-reptab="self">Self-Initiated Call</button>'+
     '</div>';
@@ -1309,7 +1331,7 @@ html += '<div class="card"><div class="tabs">'+
   ["all","mine","awaiting","returned","approved"].map(function(f){return '<button class="'+((uiState.reportsFilter||"all")===f?"active":"")+'" data-repfilter="'+f+'">'+f[0].toUpperCase()+f.slice(1)+'</button>';}).join("")+
   '</div>';
   var filt = uiState.reportsFilter||"all";
-  var list = STATE.reports.filter(function(r){
+  var list = myReports.filter(function(r){
     if(filt==="mine") return r.writtenByCallsign===session.callsign;
     if(filt==="awaiting") return r.status==="SUBMITTED";
     if(filt==="returned") return r.status==="RETURNED";
@@ -1489,9 +1511,10 @@ function wirePoliceOnProperty(){
 
 /* ---------------- GUARD NOTES (shared shift pass-down board) ---------------- */
 function renderGuardNotes(){
-  var open = STATE.guardNotes.filter(function(n){return !n.resolved;});
+  var myNotes = STATE.guardNotes.filter(function(n){return visibleToMe(n.post);});
+  var open = myNotes.filter(function(n){return !n.resolved;});
   var view = uiState.guardNotesFilter||"open";
-  var list = view==="open"?open:view==="resolved"?STATE.guardNotes.filter(function(n){return n.resolved;}):STATE.guardNotes;
+  var list = view==="open"?open:view==="resolved"?myNotes.filter(function(n){return n.resolved;}):myNotes;
   // Pinned notes float to the top within whatever list is showing, newest first within each group.
 list = list.slice().sort(function(a,b){ if(!!b.pinned - !!a.pinned !== 0) return (b.pinned?1:0)-(a.pinned?1:0); return new Date(b.createdAt)-new Date(a.createdAt); });
   var html = '<div class="section-head"><h2>Guard Notes</h2><span class="meta">'+open.length+' open</span></div>';
