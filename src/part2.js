@@ -537,8 +537,9 @@ html += '<div class="card"><div class="tabs">'+["onsite","departed","all"].map(f
   if(!list.length){ html += '<div class="empty-state">No trucks in this view.</div>'; }
   else {
     html += list.map(function(t){
-      return '<div class="list-item"><div class="top"><span>'+escapeHtml(t.company)+' / '+escapeHtml(t.driver)+'</span><span>'+(t.timeOut?"OUT "+fmtShort(t.timeOut):"IN "+fmtShort(t.timeIn))+'</span></div>'+
+      return '<div class="list-item"><div class="top"><span>'+escapeHtml(t.company)+' / '+escapeHtml(t.driver)+'</span><span class="pill '+(t.timeOut?"muted":"warn")+'">'+(t.timeOut?"DEPARTED":"ON SITE")+'</span></div>'+
         '<div class="meta">Trailer '+escapeHtml(t.trailer)+' · '+escapeHtml(t.post||"—")+' · '+escapeHtml(t.purpose||"")+'</div>'+
+        '<div class="meta">Time In '+fmtShort(t.timeIn)+(t.timeOut?' · Time Out '+fmtShort(t.timeOut):'')+'</div>'+
         (!t.timeOut? '<button class="btn sm" style="margin-top:6px;" data-truck-out="'+t.id+'">Check out</button>' : '<div class="small-muted">On site '+Math.round((new Date(t.timeOut)-new Date(t.timeIn))/60000)+'m</div>')+
         '</div>';
     }).join("");
