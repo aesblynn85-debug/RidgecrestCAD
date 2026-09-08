@@ -112,9 +112,15 @@
   restriction) for a guard with no assigned sites yet so they are not left seeing nothing
   before assignments are configured. */
   function guardVisiblePostIds(){
-    if(!session || session.role!=="GUARD") return null;
-    var mine = guardAssignedSiteIds(session.callsign);
-    return mine.length ? mine : null;
+    if(!session) return null;
+    if(session.role==="GUARD"){
+      var mine = guardAssignedSiteIds(session.callsign);
+      return mine.length ? mine : null;
+    }
+    if(session.role==="CLIENT"){
+      return session.assignedPostId ? [session.assignedPostId] : [];
+    }
+    return null;
   }
 
   /* Given a record's stored "post" string (format: "<postId> <post name>"), returns whether
@@ -131,9 +137,13 @@
   parking violation, or truck log (src/part2.js, src/part3.js). Blank for supervisors/dispatch,
   who may be creating a record on behalf of a guard at a different site. */
  function mySitePostId(){
-   if(!session || session.role!=="GUARD") return "";
-   var u = currentUnit();
-   return u ? (u.post||"") : "";
+   if(!session) return "";
+   if(session.role==="GUARD"){
+     var u = currentUnit();
+     return u ? (u.post||"") : "";
+   }
+   if(session.role==="CLIENT") return session.assignedPostId||"";
+   return "";
  }
 
  /* Sidebar widget letting a guard pick which of their assigned sites they're working this
@@ -252,15 +262,21 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
      wireLogin();
      return;
    }
+   if(session.role==="CLIENT" && route!=="trucks"){ route = "trucks"; location.hash = "#trucks"; }
    var openCalls = STATE.calls.filter(function(c){ return c.status!=="CLEARED"; }).length;
    var pending = STATE.calls.filter(function(c){ return c.status==="PENDING"; }).length;
    var onDuty = STATE.units.filter(function(u){ return u.status!=="OFFDUTY"; });
    var avail = STATE.units.filter(function(u){ return u.status==="AVAILABLE"; });
+   var statsHtml = session.role==="CLIENT" ? '' : ('<div class="stats">'+
+    '<div class="stat"><div class="n">'+openCalls+'</div><div class="l">Open</div></div>'+
+    '<div class="stat"><div class="n">'+pending+'</div><div class="l">Pending</div></div>'+
+    '<div class="stat"><div class="n">'+avail.length+'/'+onDuty.length+'</div><div class="l">Avail</div></div>'+
+    '</div>');
 
   root.innerHTML =
     '<div id="sidebar">'+
     '<div class="brand"><div class="mark">R</div><div><div class="name">Ridgecrest CAD</div><div class="sub">Dispatch Console</div></div></div>'+
-    '<ul id="navlist">'+ NAV.filter(function(n){ return !n.supvOnly || session.role==="SUPV"; }).map(function(n){
+    '<ul id="navlist">'+ NAV.filter(function(n){ return session.role==="CLIENT" ? n.id==="trucks" : (!n.supvOnly || session.role==="SUPV"); }).map(function(n){
       return '<li><button data-nav="'+n.id+'" class="'+(route===n.id?"active":"")+'"><span class="ic">'+n.ic+'</span>'+escapeHtml(n.label)+'</button></li>';
     }).join("") +'</ul>'+
     '<div class="foot">'+
@@ -276,10 +292,7 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
     '<div id="app">'+
     '<div id="topbar">'+
     '<div class="title">Ridgecrest Threat Advisory <span class="sub">Operations Center</span></div>'+
-    '<div class="stats">'+
-    '<div class="stat"><div class="n">'+openCalls+'</div><div class="l">Open</div></div>'+
-    '<div class="stat"><div class="n">'+pending+'</div><div class="l">Pending</div></div>'+
-    '<div class="stat"><div class="n">'+avail.length+'/'+onDuty.length+'</div><div class="l">Avail</div></div>'+
+    statsHtml+
     '<div class="clock"><div id="clockNow">'+fmtClock()+'</div><div>'+fmtDate()+'</div></div>'+
     '</div>'+
     '</div>'+
@@ -327,51 +340,101 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
 
  /* ---------------- login ---------------- */
  function renderLogin(){
-   return '<div id="loginscreen"><div class="loginbox">'+
-     '<h1>Ridgecrest CAD</h1><div class="sub">Sign in with your callsign and PIN.</div>'+
-     '<label class="field"><span class="lbl">Callsign</span><select id="loginCallsign">'+
-     STATE.users.filter(function(u){return u.active;}).map(function(u){ return '<option value="'+escapeHtml(u.callsign)+'">'+escapeHtml(u.callsign)+' — '+escapeHtml(u.name)+'</option>'; }).join("")+
-     '</select></label>'+
-     '<label class="field"><span class="lbl">PIN</span><input id="loginPin" class="pinbox" type="password" maxlength="6" inputmode="numeric" placeholder="••••"></label>'+
-     (uiState.loginErr? '<div class="err-msg">'+escapeHtml(uiState.loginErr)+'</div>':'')+
-     '<button class="btn primary" style="width:100%;margin-top:6px;" data-action="login">Sign in</button>'+
-     '<div class="divider"></div>'+
-     '<div class="small-muted">Default PIN for every migrated account is <b>1234</b>. Change it immediately from Users after signing in — original PINs were not carried over from the old system for security reasons.</div>'+
-     '</div></div>';
- }
+  var mode = uiState.loginMode||"staff";
+  if(mode==="client"){
+    return '<div id="loginscreen"><div class="loginbox">'+
+      '<h1>Ridgecrest CAD</h1><div class="sub">Client sign in — shipping / receiving.</div>'+
+      '<label class="field"><span class="lbl">Username</span><input id="loginUser" type="text" autocomplete="username" placeholder="e.g. jsmith"></label>'+
+      '<label class="field"><span class="lbl">Password</span><input id="loginPass" type="password" autocomplete="current-password" placeholder="••••••••"></label>'+
+      (uiState.loginErr?'<div class="err-msg">'+escapeHtml(uiState.loginErr)+'</div>':'')+
+      '<button class="btn primary" style="width:100%;margin-top:6px;" data-action="clientLogin">Sign in</button>'+
+      '<div class="divider"></div>'+
+      '<div class="small-muted">Guard or Supervisor? <a href="#" data-action="loginModeStaff">Sign in here</a>.</div>'+
+      '</div></div>';
+  }
+  return '<div id="loginscreen"><div class="loginbox">'+
+    '<h1>Ridgecrest CAD</h1><div class="sub">Sign in with your callsign and PIN.</div>'+
+    '<label class="field"><span class="lbl">Callsign</span><select id="loginCallsign">'+
+    STATE.users.filter(function(u){return u.active && u.role!=="CLIENT";}).map(function(u){ return '<option value="'+escapeHtml(u.callsign)+'">'+escapeHtml(u.callsign)+' — '+escapeHtml(u.name)+'</option>'; }).join("")+
+    '</select></label>'+
+    '<label class="field"><span class="lbl">PIN</span><input id="loginPin" class="pinbox" type="password" maxlength="6" inputmode="numeric" placeholder="••••"></label>'+
+    (uiState.loginErr?'<div class="err-msg">'+escapeHtml(uiState.loginErr)+'</div>':'')+
+    '<button class="btn primary" style="width:100%;margin-top:6px;" data-action="login">Sign in</button>'+
+    '<div class="divider"></div>'+
+    '<div class="small-muted">Default PIN for every migrated account is <b>1234</b>. Change it immediately from Users after signing in — original PINs were not carried over from the old system for security reasons.</div>'+
+    '<div class="small-muted" style="margin-top:10px;">Shipping/receiving client staff? <a href="#" data-action="loginModeClient">Sign in here</a>.</div>'+
+    '</div></div>';
+}
 
- function wireLogin(){
-   var btn = document.querySelector('[data-action="login"]');
-   btn.addEventListener("click", function(){ doLogin(); });
-   document.getElementById("loginPin").addEventListener("keydown", function(e){ if(e.key==="Enter") doLogin(); });
-   async function doLogin(){
-     var cs = document.getElementById("loginCallsign").value;
-     var pin = document.getElementById("loginPin").value;
-     var u = STATE.users.find(function(x){ return x.callsign===cs; });
-     if(!u || !u.active){ uiState.loginErr="Account not found."; render(); return; }
-     btn.disabled = true; btn.textContent = "Signing in…";
-     var ok = false;
-     try{ ok = DB.configured ? await DB.auth.verifyPin(cs, pin) : pin==="1234"; }
-     catch(e){ uiState.loginErr="Couldn't reach the server — try again."; render(); return; }
-     if(!ok){
-       uiState.loginErr="Incorrect PIN.";
-       logActivity("AUTH", cs, "Failed sign-in for "+cs);
-       render();
-       return;
-     }
-     uiState.loginErr="";
-     session = {callsign:u.callsign, name:u.name, role:u.role, assignedPostId:u.assignedPostId||""};
-     sessionStorage.setItem("cad_session", JSON.stringify(session));
-     u.lastSignIn = nowIso();
-     logActivity("AUTH", u.callsign, u.name+" ("+u.callsign+") signed in");
-     if(DB.configured) DB.auth.recordSignIn(u.callsign).catch(function(e){ console.warn("record_sign_in failed", e); });
-     startLiveTracking();
-     render();
-   }
+function wireLogin(){
+  document.querySelectorAll("[data-action='loginModeStaff'],[data-action='loginModeClient']").forEach(function(a){
+    a.addEventListener("click", function(e){
+      e.preventDefault();
+      uiState.loginMode = a.getAttribute("data-action")==="loginModeClient" ? "client" : "staff";
+      uiState.loginErr = "";
+      render();
+    });
+  });
+  if((uiState.loginMode||"staff")==="client"){
+    var cbtn = document.querySelector('[data-action="clientLogin"]');
+    if(!cbtn) return;
+    cbtn.addEventListener("click", function(){ doClientLogin(); });
+    var passEl = document.getElementById("loginPass");
+    if(passEl) passEl.addEventListener("keydown", function(e){ if(e.key==="Enter") doClientLogin(); });
+    async function doClientLogin(){
+      var un = (document.getElementById("loginUser").value||"").trim();
+      var pw = document.getElementById("loginPass").value||"";
+      var u = STATE.users.find(function(x){ return x.role==="CLIENT" && x.callsign===un; });
+      if(!u || !u.active){ uiState.loginErr="Account not found."; render(); return; }
+      cbtn.disabled = true; cbtn.textContent = "Signing in…";
+      var ok = false;
+      try{ ok = DB.configured ? await DB.auth.verifyPin(un, pw) : pw==="1234"; }
+      catch(e){ uiState.loginErr="Couldn't reach the server — try again."; render(); return; }
+      if(!ok){
+        uiState.loginErr="Incorrect password.";
+        logActivity("AUTH", un, "Failed sign-in for "+un);
+        render();
+        return;
+      }
+      uiState.loginErr="";
+      session = {callsign:u.callsign, name:u.name, role:u.role, assignedPostId:u.assignedPostId||""};
+      sessionStorage.setItem("cad_session", JSON.stringify(session));
+      u.lastSignIn = nowIso();
+      logActivity("AUTH", u.callsign, u.name+" ("+u.callsign+") signed in");
+      if(DB.configured) DB.auth.recordSignIn(u.callsign).catch(function(e){ console.warn("record_sign_in failed", e); });
+      render();
+    }
+    return;
+  }
+  var btn = document.querySelector('[data-action="login"]');
+  btn.addEventListener("click", function(){ doLogin(); });
+  document.getElementById("loginPin").addEventListener("keydown", function(e){ if(e.key==="Enter") doLogin(); });
+  async function doLogin(){
+    var cs = document.getElementById("loginCallsign").value;
+    var pin = document.getElementById("loginPin").value;
+    var u = STATE.users.find(function(x){ return x.callsign===cs; });
+    if(!u || !u.active){ uiState.loginErr="Account not found."; render(); return; }
+    btn.disabled = true; btn.textContent = "Signing in…";
+    var ok = false;
+    try{ ok = DB.configured ? await DB.auth.verifyPin(cs, pin) : pin==="1234"; }
+    catch(e){ uiState.loginErr="Couldn't reach the server — try again."; render(); return; }
+    if(!ok){
+      uiState.loginErr="Incorrect PIN.";
+      logActivity("AUTH", cs, "Failed sign-in for "+cs);
+      render();
+      return;
+    }
+    uiState.loginErr="";
+    session = {callsign:u.callsign, name:u.name, role:u.role, assignedPostId:u.assignedPostId||""};
+    sessionStorage.setItem("cad_session", JSON.stringify(session));
+    u.lastSignIn = nowIso();
+    logActivity("AUTH", u.callsign, u.name+" ("+u.callsign+") signed in");
+    if(DB.configured) DB.auth.recordSignIn(u.callsign).catch(function(e){ console.warn("record_sign_in failed", e); });
+    startLiveTracking();
+    render();
+  }
  }
-
- /* ---------------- global wiring ---------------- */
- function wireGlobal(){
+function wireGlobal(){
    document.querySelectorAll("[data-nav]").forEach(function(b){
      b.addEventListener("click", function(){ nav(b.getAttribute("data-nav")); });
    });
@@ -1043,15 +1106,15 @@ function renderTrucks(){
   var list = view==="onsite"?onSite:view==="departed"?departed:STATE.trucks.filter(function(t){return visibleToMe(t.post);});
   var html = '<div class="section-head"><h2>Truck Log — Gate Register</h2><span class="meta">'+onSite.length+' on site · '+STATE.trucks.filter(function(t){return visibleToMe(t.post) && t.timeIn && t.timeIn.slice(0,10)===new Date().toISOString().slice(0,10);}).length+' today</span></div>';
   html += '<div class="two-col">';
-  html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">Gate Check-In</div><form id="truckForm">'+
+  html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">'+(session.role==="CLIENT"?"Log Truck at Dock":"Gate Check-In")+'</div><form id="truckForm">'+
     '<label class="field"><span class="lbl">Trucking Company <span class="req">*</span></span><input type="text" name="company" required></label>'+
     '<label class="field"><span class="lbl">Driver Name <span class="req">*</span></span><input type="text" name="driver" required></label>'+
     '<div class="grid2"><label class="field"><span class="lbl">Trailer # <span class="req">*</span></span><input type="text" name="trailer" required></label>'+
     '<label class="field"><span class="lbl">Tractor #</span><input type="text" name="tractor"></label></div>'+
-    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
+    (session.role==="CLIENT" ? ('<label class="field"><span class="lbl">Site</span><input type="text" value="'+escapeHtml((function(){var p=STATE.posts.find(function(x){return x.id===mySitePostId();}); return p?(p.id+" \u2014 "+p.name):"No site assigned";})())+'" readonly><input type="hidden" name="post" value="'+escapeHtml(mySitePostId())+'"></label>') : ('<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" \u2014 "+p.name)+'</option>';}).join("")+'</select></label>'))+
     '<label class="field"><span class="lbl">Purpose</span><select name="purpose"><option>Delivery</option><option>Pickup</option><option>Service</option><option>Other</option></select></label>'+
-    '<div class="grid2"><label class="field"><span class="lbl">Dock / Door</span><input type="text" name="dock"></label><label class="field"><span class="lbl">Seal #</span><input type="text" name="seal"></label></div>'+
-    '<label class="field"><span class="lbl">BOL / PO #</span><input type="text" name="bol"></label>'+
+    '<div class="grid2"><label class="field"><span class="lbl">Dock / Door'+(session.role==="CLIENT"?' <span class="req">*</span>':'')+'</span><input type="text" name="dock"'+(session.role==="CLIENT"?' required':'')+'></label><label class="field"><span class="lbl">Seal #'+(session.role==="CLIENT"?' <span class="req">*</span>':'')+'</span><input type="text" name="seal"'+(session.role==="CLIENT"?' required':'')+'></label></div>'+
+    '<label class="field"><span class="lbl">BOL / PO #'+(session.role==="CLIENT"?' <span class="req">*</span>':'')+'</span><input type="text" name="bol"'+(session.role==="CLIENT"?' required':'')+'></label>'+
     '<label class="field"><span class="lbl">Driver License / CDL</span><input type="text" name="license"></label>'+
     '<label class="field"><span class="lbl">Notes</span><textarea name="notes" rows="2"></textarea></label>'+
     '<button type="submit" class="btn primary" style="width:100%;">Check in — time in now</button></form></div>';
@@ -1637,7 +1700,7 @@ function renderUsers(){
   var pinCard = '<div class="card" style="margin-bottom:16px;"><div class="section-head"><h2>Change My PIN</h2></div>'+'<div class="small-muted" style="margin-bottom:10px;">Update the PIN for your own account ('+escapeHtml(session.callsign)+'). This does not affect any other account.</div>'+'<div class="grid2"><label class="field"><span class="lbl">Current PIN</span><input id="pinCurrent" type="password" maxlength="6" inputmode="numeric" placeholder="pin"></label>'+'<label class="field"><span class="lbl">New PIN</span><input id="pinNew" type="password" maxlength="6" inputmode="numeric" placeholder="pin"></label></div>'+'<label class="field"><span class="lbl">Confirm New PIN</span><input id="pinConfirm" type="password" maxlength="6" inputmode="numeric" placeholder="pin"></label>'+'<button class="btn primary" data-action="changeMyPin" style="margin-top:6px;">Update PIN</button>'+'</div>';
   var active = STATE.users.filter(function(u){return u.active;}).length;
   var html = pinCard + '<div class="card"><div class="section-head"><h2>User Accounts</h2><span class="meta">'+active+' active / '+STATE.users.length+' total</span>'+
-    (session.role==="SUPV"? '<button class="btn sm primary" data-action="addUser">+ Add account</button>' : '')+
+    (session.role==="SUPV" ? '<button class="btn sm primary" data-action="addUser">+ Add account</button> <button class="btn sm" data-action="addClient">+ Add client account</button>' : '')+
     '</div>'+
     '<div class="small-muted" style="margin-bottom:14px;">Every account signs in with a callsign and a PIN. Guards can read the board and report — post to Patrol Chat, scan checkpoints, log trucks and attach photos. Supervisors add the roster, post directory, these accounts and the data reset. A supervisor account\'s <b>Map access</b> controls what it sees on the Live Map: a specific site limits it to that site\'s guards (Supervisor); All Sites shows everyone (Dispatch/Admin).</div>';
   html += STATE.users.map(function(u){
@@ -1653,6 +1716,11 @@ function renderUsers(){
          STATE.posts.map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(current===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
          '</select></div>')
         : ('<div class="small-muted" style="margin-top:4px;">Map access: '+escapeHtml(currentLabel)+'</div>');
+    }
+    else if(u.role==="CLIENT"){
+      var siteId = u.assignedPostId||"";
+      var site = siteId ? STATE.posts.find(function(p){return p.id===siteId;}) : null;
+      mapAccess = '<div class="small-muted" style="margin-top:4px;">Site: '+(site?escapeHtml(site.id+" \u2014 "+site.name):"Not assigned")+'</div>';
     }
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid hsl(var(--border)/.6);">'+
       '<div><div style="font-weight:700;">'+escapeHtml(u.callsign)+' <span class="pill blue">'+u.role+'</span>'+(u.callsign===session.callsign?' <span class="pill ok">YOU</span>':'')+'</div>'+
@@ -1681,6 +1749,27 @@ function wireUsers(){
     }
     STATE.users.push(u);
     logActivity("AUTH", session.callsign, session.name+" created guard account "+cs+" ("+name+")");
+    persist();
+  });
+
+  var addClientBtn = document.querySelector('[data-action="addClient"]');
+  if(addClientBtn) addClientBtn.addEventListener("click", async function(){
+    var cs = prompt("New client username (e.g. acme.shipping)"); if(!cs) return;
+    cs = cs.trim();
+    var name = prompt("Employee full name")||""; if(!name) return;
+    var siteList = STATE.posts.map(function(p){return p.id+" — "+p.name;}).join("\n");
+    var postId = prompt("Assign to which site? Enter the exact site ID.\n\nAvailable sites:\n"+siteList)||"";
+    postId = postId.trim();
+    if(!postId || !STATE.posts.some(function(p){return p.id===postId;})){ toast("A valid site ID is required for a client account."); return; }
+    if(STATE.users.some(function(u){return u.callsign===cs;})){ toast("Username "+cs+" already exists."); return; }
+    var pin = prompt("Temporary password for "+name+" (they'll be asked to change it at first sign-in)")||"1234";
+    var u = {callsign:cs, name:name, role:"CLIENT", title:"Client — Shipping/Receiving", active:true, lastSignIn:null, mustChangePin:true, assignedPostId:postId};
+    if(DB.configured){
+      try{ await DB.auth.createClient(cs, name, pin, postId); }
+      catch(e){ toast("Couldn't create the account: "+(e.message||e)); return; }
+    }
+    STATE.users.push(u);
+    logActivity("AUTH", session.callsign, session.name+" created client account "+cs+" ("+name+") for site "+postId);
     persist();
   });
 
