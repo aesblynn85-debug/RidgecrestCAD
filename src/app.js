@@ -18,7 +18,8 @@
    {id:"users", label:"Users", ic:"☺"},
    // Dispatch/Supervisor/Admin only — filtered out of the sidebar for guards in renderShell,
    // and renderMap() itself refuses to render for anyone else as a second line of defense.
-   {id:"map", label:"Live Map", ic:"◎", supvOnly:true}
+   {id:"map", label:"Live Map", ic:"◎", supvOnly:true},
+   {id:"callhistory", label:"Call History", ic:"▣", supvOnly:true}
    ];
 
  var REPORT_TYPES = [
@@ -290,6 +291,7 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
      case "log": return renderLog();
      case "users": return renderUsers();
      case "map": return renderMap();
+     case "callhistory": return renderCallHistory();
      default: return renderDispatch();
    }
  }
@@ -388,6 +390,7 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
    if(route==="log") wireLog();
    if(route==="users") wireUsers();
    if(route==="map") wireMap();
+   if(route==="callhistory") wireCallHistory();
  }
 
  /* app.js continues in part2.js / part3.js, appended below via the build step */
