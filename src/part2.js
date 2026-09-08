@@ -520,15 +520,15 @@ function renderTrucks(){
   var list = view==="onsite"?onSite:view==="departed"?departed:STATE.trucks.filter(function(t){return visibleToMe(t.post);});
   var html = '<div class="section-head"><h2>Truck Log — Gate Register</h2><span class="meta">'+onSite.length+' on site · '+STATE.trucks.filter(function(t){return visibleToMe(t.post) && t.timeIn && t.timeIn.slice(0,10)===new Date().toISOString().slice(0,10);}).length+' today</span></div>';
   html += '<div class="two-col">';
-  html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">Gate Check-In</div><form id="truckForm">'+
+  html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">'+(session.role==="CLIENT"?"Log Truck at Dock":"Gate Check-In")+'</div><form id="truckForm">'+
     '<label class="field"><span class="lbl">Trucking Company <span class="req">*</span></span><input type="text" name="company" required></label>'+
     '<label class="field"><span class="lbl">Driver Name <span class="req">*</span></span><input type="text" name="driver" required></label>'+
     '<div class="grid2"><label class="field"><span class="lbl">Trailer # <span class="req">*</span></span><input type="text" name="trailer" required></label>'+
     '<label class="field"><span class="lbl">Tractor #</span><input type="text" name="tractor"></label></div>'+
-    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
+    (session.role==="CLIENT" ? ('<label class="field"><span class="lbl">Site</span><input type="text" value="'+escapeHtml((function(){var p=STATE.posts.find(function(x){return x.id===mySitePostId();}); return p?(p.id+" \u2014 "+p.name):"No site assigned";})())+'" readonly><input type="hidden" name="post" value="'+escapeHtml(mySitePostId())+'"></label>') : ('<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" \u2014 "+p.name)+'</option>';}).join("")+'</select></label>'))+
     '<label class="field"><span class="lbl">Purpose</span><select name="purpose"><option>Delivery</option><option>Pickup</option><option>Service</option><option>Other</option></select></label>'+
-    '<div class="grid2"><label class="field"><span class="lbl">Dock / Door</span><input type="text" name="dock"></label><label class="field"><span class="lbl">Seal #</span><input type="text" name="seal"></label></div>'+
-    '<label class="field"><span class="lbl">BOL / PO #</span><input type="text" name="bol"></label>'+
+    '<div class="grid2"><label class="field"><span class="lbl">Dock / Door'+(session.role==="CLIENT"?' <span class="req">*</span>':'')+'</span><input type="text" name="dock"'+(session.role==="CLIENT"?' required':'')+'></label><label class="field"><span class="lbl">Seal #'+(session.role==="CLIENT"?' <span class="req">*</span>':'')+'</span><input type="text" name="seal"'+(session.role==="CLIENT"?' required':'')+'></label></div>'+
+    '<label class="field"><span class="lbl">BOL / PO #'+(session.role==="CLIENT"?' <span class="req">*</span>':'')+'</span><input type="text" name="bol"'+(session.role==="CLIENT"?' required':'')+'></label>'+
     '<label class="field"><span class="lbl">Driver License / CDL</span><input type="text" name="license"></label>'+
     '<label class="field"><span class="lbl">Notes</span><textarea name="notes" rows="2"></textarea></label>'+
     '<button type="submit" class="btn primary" style="width:100%;">Check in — time in now</button></form></div>';
