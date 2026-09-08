@@ -112,9 +112,15 @@
   restriction) for a guard with no assigned sites yet so they are not left seeing nothing
   before assignments are configured. */
   function guardVisiblePostIds(){
-    if(!session || session.role!=="GUARD") return null;
-    var mine = guardAssignedSiteIds(session.callsign);
-    return mine.length ? mine : null;
+    if(!session) return null;
+    if(session.role==="GUARD"){
+      var mine = guardAssignedSiteIds(session.callsign);
+      return mine.length ? mine : null;
+    }
+    if(session.role==="CLIENT"){
+      return session.assignedPostId ? [session.assignedPostId] : [];
+    }
+    return null;
   }
 
   /* Given a record's stored "post" string (format: "<postId> <post name>"), returns whether
@@ -131,9 +137,13 @@
   parking violation, or truck log (src/part2.js, src/part3.js). Blank for supervisors/dispatch,
   who may be creating a record on behalf of a guard at a different site. */
  function mySitePostId(){
-   if(!session || session.role!=="GUARD") return "";
-   var u = currentUnit();
-   return u ? (u.post||"") : "";
+   if(!session) return "";
+   if(session.role==="GUARD"){
+     var u = currentUnit();
+     return u ? (u.post||"") : "";
+   }
+   if(session.role==="CLIENT") return session.assignedPostId||"";
+   return "";
  }
 
  /* Sidebar widget letting a guard pick which of their assigned sites they're working this
@@ -252,15 +262,21 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
      wireLogin();
      return;
    }
+   if(session.role==="CLIENT" && route!=="trucks"){ route = "trucks"; location.hash = "#trucks"; }
    var openCalls = STATE.calls.filter(function(c){ return c.status!=="CLEARED"; }).length;
    var pending = STATE.calls.filter(function(c){ return c.status==="PENDING"; }).length;
    var onDuty = STATE.units.filter(function(u){ return u.status!=="OFFDUTY"; });
    var avail = STATE.units.filter(function(u){ return u.status==="AVAILABLE"; });
+   var statsHtml = session.role==="CLIENT" ? '' : ('<div class="stats">'+
+    '<div class="stat"><div class="n">'+openCalls+'</div><div class="l">Open</div></div>'+
+    '<div class="stat"><div class="n">'+pending+'</div><div class="l">Pending</div></div>'+
+    '<div class="stat"><div class="n">'+avail.length+'/'+onDuty.length+'</div><div class="l">Avail</div></div>'+
+    '</div>');
 
   root.innerHTML =
     '<div id="sidebar">'+
     '<div class="brand"><div class="mark">R</div><div><div class="name">Ridgecrest CAD</div><div class="sub">Dispatch Console</div></div></div>'+
-    '<ul id="navlist">'+ NAV.filter(function(n){ return !n.supvOnly || session.role==="SUPV"; }).map(function(n){
+    '<ul id="navlist">'+ NAV.filter(function(n){ return session.role==="CLIENT" ? n.id==="trucks" : (!n.supvOnly || session.role==="SUPV"); }).map(function(n){
       return '<li><button data-nav="'+n.id+'" class="'+(route===n.id?"active":"")+'"><span class="ic">'+n.ic+'</span>'+escapeHtml(n.label)+'</button></li>';
     }).join("") +'</ul>'+
     '<div class="foot">'+
@@ -276,10 +292,7 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
     '<div id="app">'+
     '<div id="topbar">'+
     '<div class="title">Ridgecrest Threat Advisory <span class="sub">Operations Center</span></div>'+
-    '<div class="stats">'+
-    '<div class="stat"><div class="n">'+openCalls+'</div><div class="l">Open</div></div>'+
-    '<div class="stat"><div class="n">'+pending+'</div><div class="l">Pending</div></div>'+
-    '<div class="stat"><div class="n">'+avail.length+'/'+onDuty.length+'</div><div class="l">Avail</div></div>'+
+    statsHtml+
     '<div class="clock"><div id="clockNow">'+fmtClock()+'</div><div>'+fmtDate()+'</div></div>'+
     '</div>'+
     '</div>'+
@@ -327,51 +340,101 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
 
  /* ---------------- login ---------------- */
  function renderLogin(){
-   return '<div id="loginscreen"><div class="loginbox">'+
-     '<h1>Ridgecrest CAD</h1><div class="sub">Sign in with your callsign and PIN.</div>'+
-     '<label class="field"><span class="lbl">Callsign</span><select id="loginCallsign">'+
-     STATE.users.filter(function(u){return u.active;}).map(function(u){ return '<option value="'+escapeHtml(u.callsign)+'">'+escapeHtml(u.callsign)+' — '+escapeHtml(u.name)+'</option>'; }).join("")+
-     '</select></label>'+
-     '<label class="field"><span class="lbl">PIN</span><input id="loginPin" class="pinbox" type="password" maxlength="6" inputmode="numeric" placeholder="••••"></label>'+
-     (uiState.loginErr? '<div class="err-msg">'+escapeHtml(uiState.loginErr)+'</div>':'')+
-     '<button class="btn primary" style="width:100%;margin-top:6px;" data-action="login">Sign in</button>'+
-     '<div class="divider"></div>'+
-     '<div class="small-muted">Default PIN for every migrated account is <b>1234</b>. Change it immediately from Users after signing in — original PINs were not carried over from the old system for security reasons.</div>'+
-     '</div></div>';
- }
+  var mode = uiState.loginMode||"staff";
+  if(mode==="client"){
+    return '<div id="loginscreen"><div class="loginbox">'+
+      '<h1>Ridgecrest CAD</h1><div class="sub">Client sign in — shipping / receiving.</div>'+
+      '<label class="field"><span class="lbl">Username</span><input id="loginUser" type="text" autocomplete="username" placeholder="e.g. jsmith"></label>'+
+      '<label class="field"><span class="lbl">Password</span><input id="loginPass" type="password" autocomplete="current-password" placeholder="••••••••"></label>'+
+      (uiState.loginErr?'<div class="err-msg">'+escapeHtml(uiState.loginErr)+'</div>':'')+
+      '<button class="btn primary" style="width:100%;margin-top:6px;" data-action="clientLogin">Sign in</button>'+
+      '<div class="divider"></div>'+
+      '<div class="small-muted">Guard or Supervisor? <a href="#" data-action="loginModeStaff">Sign in here</a>.</div>'+
+      '</div></div>';
+  }
+  return '<div id="loginscreen"><div class="loginbox">'+
+    '<h1>Ridgecrest CAD</h1><div class="sub">Sign in with your callsign and PIN.</div>'+
+    '<label class="field"><span class="lbl">Callsign</span><select id="loginCallsign">'+
+    STATE.users.filter(function(u){return u.active && u.role!=="CLIENT";}).map(function(u){ return '<option value="'+escapeHtml(u.callsign)+'">'+escapeHtml(u.callsign)+' — '+escapeHtml(u.name)+'</option>'; }).join("")+
+    '</select></label>'+
+    '<label class="field"><span class="lbl">PIN</span><input id="loginPin" class="pinbox" type="password" maxlength="6" inputmode="numeric" placeholder="••••"></label>'+
+    (uiState.loginErr?'<div class="err-msg">'+escapeHtml(uiState.loginErr)+'</div>':'')+
+    '<button class="btn primary" style="width:100%;margin-top:6px;" data-action="login">Sign in</button>'+
+    '<div class="divider"></div>'+
+    '<div class="small-muted">Default PIN for every migrated account is <b>1234</b>. Change it immediately from Users after signing in — original PINs were not carried over from the old system for security reasons.</div>'+
+    '<div class="small-muted" style="margin-top:10px;">Shipping/receiving client staff? <a href="#" data-action="loginModeClient">Sign in here</a>.</div>'+
+    '</div></div>';
+}
 
- function wireLogin(){
-   var btn = document.querySelector('[data-action="login"]');
-   btn.addEventListener("click", function(){ doLogin(); });
-   document.getElementById("loginPin").addEventListener("keydown", function(e){ if(e.key==="Enter") doLogin(); });
-   async function doLogin(){
-     var cs = document.getElementById("loginCallsign").value;
-     var pin = document.getElementById("loginPin").value;
-     var u = STATE.users.find(function(x){ return x.callsign===cs; });
-     if(!u || !u.active){ uiState.loginErr="Account not found."; render(); return; }
-     btn.disabled = true; btn.textContent = "Signing in…";
-     var ok = false;
-     try{ ok = DB.configured ? await DB.auth.verifyPin(cs, pin) : pin==="1234"; }
-     catch(e){ uiState.loginErr="Couldn't reach the server — try again."; render(); return; }
-     if(!ok){
-       uiState.loginErr="Incorrect PIN.";
-       logActivity("AUTH", cs, "Failed sign-in for "+cs);
-       render();
-       return;
-     }
-     uiState.loginErr="";
-     session = {callsign:u.callsign, name:u.name, role:u.role, assignedPostId:u.assignedPostId||""};
-     sessionStorage.setItem("cad_session", JSON.stringify(session));
-     u.lastSignIn = nowIso();
-     logActivity("AUTH", u.callsign, u.name+" ("+u.callsign+") signed in");
-     if(DB.configured) DB.auth.recordSignIn(u.callsign).catch(function(e){ console.warn("record_sign_in failed", e); });
-     startLiveTracking();
-     render();
-   }
+function wireLogin(){
+  document.querySelectorAll("[data-action='loginModeStaff'],[data-action='loginModeClient']").forEach(function(a){
+    a.addEventListener("click", function(e){
+      e.preventDefault();
+      uiState.loginMode = a.getAttribute("data-action")==="loginModeClient" ? "client" : "staff";
+      uiState.loginErr = "";
+      render();
+    });
+  });
+  if((uiState.loginMode||"staff")==="client"){
+    var cbtn = document.querySelector('[data-action="clientLogin"]');
+    if(!cbtn) return;
+    cbtn.addEventListener("click", function(){ doClientLogin(); });
+    var passEl = document.getElementById("loginPass");
+    if(passEl) passEl.addEventListener("keydown", function(e){ if(e.key==="Enter") doClientLogin(); });
+    async function doClientLogin(){
+      var un = (document.getElementById("loginUser").value||"").trim();
+      var pw = document.getElementById("loginPass").value||"";
+      var u = STATE.users.find(function(x){ return x.role==="CLIENT" && x.callsign===un; });
+      if(!u || !u.active){ uiState.loginErr="Account not found."; render(); return; }
+      cbtn.disabled = true; cbtn.textContent = "Signing in…";
+      var ok = false;
+      try{ ok = DB.configured ? await DB.auth.verifyPin(un, pw) : pw==="1234"; }
+      catch(e){ uiState.loginErr="Couldn't reach the server — try again."; render(); return; }
+      if(!ok){
+        uiState.loginErr="Incorrect password.";
+        logActivity("AUTH", un, "Failed sign-in for "+un);
+        render();
+        return;
+      }
+      uiState.loginErr="";
+      session = {callsign:u.callsign, name:u.name, role:u.role, assignedPostId:u.assignedPostId||""};
+      sessionStorage.setItem("cad_session", JSON.stringify(session));
+      u.lastSignIn = nowIso();
+      logActivity("AUTH", u.callsign, u.name+" ("+u.callsign+") signed in");
+      if(DB.configured) DB.auth.recordSignIn(u.callsign).catch(function(e){ console.warn("record_sign_in failed", e); });
+      render();
+    }
+    return;
+  }
+  var btn = document.querySelector('[data-action="login"]');
+  btn.addEventListener("click", function(){ doLogin(); });
+  document.getElementById("loginPin").addEventListener("keydown", function(e){ if(e.key==="Enter") doLogin(); });
+  async function doLogin(){
+    var cs = document.getElementById("loginCallsign").value;
+    var pin = document.getElementById("loginPin").value;
+    var u = STATE.users.find(function(x){ return x.callsign===cs; });
+    if(!u || !u.active){ uiState.loginErr="Account not found."; render(); return; }
+    btn.disabled = true; btn.textContent = "Signing in…";
+    var ok = false;
+    try{ ok = DB.configured ? await DB.auth.verifyPin(cs, pin) : pin==="1234"; }
+    catch(e){ uiState.loginErr="Couldn't reach the server — try again."; render(); return; }
+    if(!ok){
+      uiState.loginErr="Incorrect PIN.";
+      logActivity("AUTH", cs, "Failed sign-in for "+cs);
+      render();
+      return;
+    }
+    uiState.loginErr="";
+    session = {callsign:u.callsign, name:u.name, role:u.role, assignedPostId:u.assignedPostId||""};
+    sessionStorage.setItem("cad_session", JSON.stringify(session));
+    u.lastSignIn = nowIso();
+    logActivity("AUTH", u.callsign, u.name+" ("+u.callsign+") signed in");
+    if(DB.configured) DB.auth.recordSignIn(u.callsign).catch(function(e){ console.warn("record_sign_in failed", e); });
+    startLiveTracking();
+    render();
+  }
  }
-
- /* ---------------- global wiring ---------------- */
- function wireGlobal(){
+function wireGlobal(){
    document.querySelectorAll("[data-nav]").forEach(function(b){
      b.addEventListener("click", function(){ nav(b.getAttribute("data-nav")); });
    });
