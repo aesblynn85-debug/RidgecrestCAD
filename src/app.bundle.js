@@ -1719,8 +1719,13 @@ function renderUsers(){
     }
     else if(u.role==="CLIENT"){
       var siteId = u.assignedPostId||"";
-      var site = siteId ? STATE.posts.find(function(p){return p.id===siteId;}) : null;
-      mapAccess = '<div class="small-muted" style="margin-top:4px;">Site: '+(site?escapeHtml(site.id+" \u2014 "+site.name):"Not assigned")+'</div>';
+      mapAccess = (session.role==="SUPV" ?
+        ('<div style="margin-top:6px;"><span class="small-muted" style="margin-right:6px;">Site</span>'+
+         '<select class="mapAccessSel" data-user="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:12px;padding:4px 6px;">'+
+         '<option value="">Not assigned</option>'+
+         STATE.posts.map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(siteId===p.id?"selected":"")+'>'+escapeHtml(p.id+" \u2014 "+p.name)+'</option>'; }).join("")+
+         '</select></div>')
+        : ('<div class="small-muted" style="margin-top:4px;">Site: '+(siteId?escapeHtml(siteId):"Not assigned")+'</div>'));
     }
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid hsl(var(--border)/.6);">'+
       '<div><div style="font-weight:700;">'+escapeHtml(u.callsign)+' <span class="pill blue">'+u.role+'</span>'+(u.callsign===session.callsign?' <span class="pill ok">YOU</span>':'')+'</div>'+
