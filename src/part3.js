@@ -1,10 +1,10 @@
 /* ---------------- PARKING LOT VIOLATIONS ---------------- */
 function renderParking(){
   var C = window.__CAD;
-  var list = STATE.parkingViolations.slice().sort(function(a,b){ return new Date(b.occurred)-new Date(a.occurred); });
-  var openCount = STATE.parkingViolations.filter(function(v){return v.status!=="CLOSED";}).length;
+  var list = STATE.parkingViolations.filter(function(v){return visibleToMe(v.post);}).sort(function(a,b){ return new Date(b.occurred)-new Date(a.occurred); });
+  var openCount = STATE.parkingViolations.filter(function(v){return visibleToMe(v.post) && v.status!=="CLOSED";}).length;
   var today = new Date().toISOString().slice(0,10);
-  var todayCount = STATE.parkingViolations.filter(function(v){return (v.occurred||"").slice(0,10)===today;}).length;
+  var todayCount = STATE.parkingViolations.filter(function(v){return visibleToMe(v.post) && (v.occurred||"").slice(0,10)===today;}).length;
   var html = '<div class="section-head"><h2>Parking Lot Violations</h2><span class="meta">'+openCount+' open · '+todayCount+' today</span>'+
     '<button class="btn sm" data-action="parkingCsv">⭳ CSV</button></div>';
   html += '<div class="two-col">';
@@ -190,10 +190,11 @@ function downloadCsv(filename, rows){
 function renderReports(){
   var C = window.__CAD;
   var tab = uiState.reportsTab || "incident";
-  var html = '<div class="section-head"><h2>Field Reports</h2><span class="meta">'+STATE.reports.length+' reports</span>'+
+  var myReports = STATE.reports.filter(function(r){return visibleToMe(r.post);});
+  var html = '<div class="section-head"><h2>Field Reports</h2><span class="meta">'+myReports.length+' reports</span>'+
     '<button class="btn sm" data-action="reportsCsv">⭳ Reports CSV</button></div>';
   html += '<div class="tabs">'+
-    '<button class="'+(tab==="incident"?"active":"")+'" data-reptab="incident">Incident Reports '+STATE.reports.length+'</button>'+
+    '<button class="'+(tab==="incident"?"active":"")+'" data-reptab="incident">Incident Reports '+myReports.length+'</button>'+
     '<button class="'+(tab==="police"?"active":"")+'" data-reptab="police">Police On Property '+STATE.policeOnProperty.filter(function(p){return !p.departedAt;}).length+' now</button>'+
     '<button class="'+(tab==="self"?"active":"")+'" data-reptab="self">Self-Initiated Call</button>'+
     '</div>';
@@ -233,7 +234,7 @@ html += '<div class="card"><div class="tabs">'+
   ["all","mine","awaiting","returned","approved"].map(function(f){return '<button class="'+((uiState.reportsFilter||"all")===f?"active":"")+'" data-repfilter="'+f+'">'+f[0].toUpperCase()+f.slice(1)+'</button>';}).join("")+
   '</div>';
   var filt = uiState.reportsFilter||"all";
-  var list = STATE.reports.filter(function(r){
+  var list = myReports.filter(function(r){
     if(filt==="mine") return r.writtenByCallsign===session.callsign;
     if(filt==="awaiting") return r.status==="SUBMITTED";
     if(filt==="returned") return r.status==="RETURNED";
@@ -413,9 +414,10 @@ function wirePoliceOnProperty(){
 
 /* ---------------- GUARD NOTES (shared shift pass-down board) ---------------- */
 function renderGuardNotes(){
-  var open = STATE.guardNotes.filter(function(n){return !n.resolved;});
+  var myNotes = STATE.guardNotes.filter(function(n){return visibleToMe(n.post);});
+  var open = myNotes.filter(function(n){return !n.resolved;});
   var view = uiState.guardNotesFilter||"open";
-  var list = view==="open"?open:view==="resolved"?STATE.guardNotes.filter(function(n){return n.resolved;}):STATE.guardNotes;
+  var list = view==="open"?open:view==="resolved"?myNotes.filter(function(n){return n.resolved;}):myNotes;
   // Pinned notes float to the top within whatever list is showing, newest first within each group.
 list = list.slice().sort(function(a,b){ if(!!b.pinned - !!a.pinned !== 0) return (b.pinned?1:0)-(a.pinned?1:0); return new Date(b.createdAt)-new Date(a.createdAt); });
   var html = '<div class="section-head"><h2>Guard Notes</h2><span class="meta">'+open.length+' open</span></div>';
