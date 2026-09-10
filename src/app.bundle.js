@@ -49,10 +49,28 @@
  var UNIT_TYPES = ["Foot Post","Vehicle Patrol","Golf Cart Patrol","Bike Patrol","K9 Unit","Supervisor","Console / Dispatch","Other"];
 
  var CALL_CODES = [
-   "10-05 Unsecured Door / Window","10-07 Parking Violation BOLO","10-08L Patrol Tour","10-19 Shift Change",
-   "10-31 Trespass / Unwanted Person","10-41 Access Control Issue","10-41 Monitoring Exit Only","10-52 Medical Emergency / EMS Needed",
-   "10-62 Intrusion Alarm Activation","10-99 Monitor Exit Only"
-   ];
+   "Signal 3 — Fire Alarm","Signal 5 — Bomb Threat","Signal 14 — Threats","Signal 19 — Smoke Odor",
+   "Signal 22 — Area Check","Signal 29 — Fight","Signal 33 — Fire","Signal 36 — HAZMAT",
+   "Signal 41 — Accident","Signal 54 — Suspicious Person/Vehicle","Signal 72 — Parking Lot Violation","Signal 92 — Gas Leak",
+   "Signal 93 — Trespassing","Signal 94 — Loitering","10-37 Safety Violation","10-59 Escort"
+];
+
+/* Guard/unit status codes shown in the Unit Status dropdown (Dispatch tab) and the Units
+roster — [internal STATE code, radio code + label shown to users]. The code on the left is
+what's stored in units.status and referenced throughout dispatch/call logic; only the label
+on the right is what guards actually see. */
+var UNIT_STATUSES = [
+["AVAILABLE","10-8 In Service"],
+["DISPATCHED","10-12 Dispatched"],
+["ENROUTE","10-75 Enroute"],
+["ONSCENE","10-7 On Scene"],
+["BUSY","10-6 Busy Unavailable"],
+["OFFDUTY","10-10 Temp Out of Service"]
+];
+function unitStatusLabel(code){
+var f = UNIT_STATUSES.find(function(s){ return s[0]===code; });
+return f ? f[1] : code;
+}
 
  var PRIORITIES = {1:"Emergency",2:"Urgent",3:"Routine",4:"Log Only"};
   var RECEIVED_VIA = ["Phone","Radio","Alarm Co.","Walk-In","Camera / CCTV","Guard App","Self-Initiated (Field)"];
@@ -483,7 +501,8 @@ function wireGlobal(){
    get session(){return session;}, set session(v){session=v;},
    uiState:uiState, NAV:NAV, REPORT_TYPES:REPORT_TYPES, VIOLATION_TYPES:VIOLATION_TYPES, ACTION_TAKEN_OPTS:ACTION_TAKEN_OPTS,
    CALL_CODES:CALL_CODES, PRIORITIES:PRIORITIES, RECEIVED_VIA:RECEIVED_VIA, currentUnit:currentUnit, todayCode:todayCode, pad:pad,
-   UNIT_TYPES:UNIT_TYPES, mySitePostId:mySitePostId, guardAssignedSiteIds:guardAssignedSiteIds
+   UNIT_TYPES:UNIT_TYPES, mySitePostId:mySitePostId, guardAssignedSiteIds:guardAssignedSiteIds,
+ UNIT_STATUSES:UNIT_STATUSES, unitStatusLabel:unitStatusLabel
  };
 
  /* ---------------- init ---------------- */
@@ -628,18 +647,18 @@ html += '<div class="card"><div class="section-head"><h2>New Call Intake</h2><sp
 
 // Unit status
 html += '<div class="card"><div class="section-head"><h2>Unit Status</h2><span class="meta">'+STATE.units.filter(function(u){return u.status!=="OFFDUTY";}).length+' on duty</span></div>';
-  ["AVAILABLE","DISPATCHED","ONSCENE","OFFDUTY"].forEach(function(st){
-    var us = STATE.units.filter(function(u){ return u.status===st; });
-    if(!us.length) return;
-    html += '<div class="small-muted" style="margin:10px 0 4px;text-transform:uppercase;letter-spacing:.05em;">'+st+' ('+us.length+')</div>';
-    html += us.map(function(u){
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid hsl(var(--border)/.5);">'+
-        '<div><div style="font-weight:600;">'+escapeHtml(u.callsign)+' '+escapeHtml(u.name)+'</div><div class="small-muted">'+escapeHtml(u.type)+' · '+escapeHtml(u.post||"")+' · '+escapeHtml(u.shift||"")+'</div></div>'+
-        '<select class="unitStatusSel" data-unit="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:11px;padding:4px 6px;">'+
-        ["AVAILABLE","DISPATCHED","ONSCENE","OFFDUTY"].map(function(s){ return '<option value="'+s+'" '+(s===u.status?"selected":"")+'>'+s+'</option>'; }).join("")+
-        '</select></div>';
-    }).join("");
-  });
+  C.UNIT_STATUSES.map(function(s){return s[0];}).forEach(function(st){
+var us = STATE.units.filter(function(u){ return u.status===st; });
+if(!us.length) return;
+html += '<div class="small-muted" style="margin:10px 0 4px;text-transform:uppercase;letter-spacing:.05em;">'+escapeHtml(C.unitStatusLabel(st))+' ('+us.length+')</div>';
+html += us.map(function(u){
+return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid hsl(var(--border)/.5);">'+
+'<div><div style="font-weight:600;">'+escapeHtml(u.callsign)+' '+escapeHtml(u.name)+'</div><div class="small-muted">'+escapeHtml(u.type)+' · '+escapeHtml(u.post||"")+' · '+escapeHtml(u.shift||"")+'</div></div>'+
+'<select class="unitStatusSel" data-unit="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:11px;padding:4px 6px;">'+
+C.UNIT_STATUSES.map(function(s){ return '<option value="'+s[0]+'" '+(s[0]===u.status?"selected":"")+'>'+escapeHtml(s[1])+'</option>'; }).join("")+
+'</select></div>';
+}).join("");
+});
 
 html += '<div class="small-muted" style="margin:14px 0 6px;text-transform:uppercase;letter-spacing:.05em;">Live Log</div><div style="max-height:260px;overflow-y:auto;">';
   html += STATE.activityLog.slice(0,12).map(function(l){
@@ -665,7 +684,7 @@ function renderCallModal(c){
     var u = STATE.units.find(function(x){return x.callsign===cs;});
     var st = u ? u.status : "?";
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">'+
-      '<span>'+escapeHtml(cs)+(u?" — "+escapeHtml(u.name):"")+' <span class="pill '+(st==="ONSCENE"?"ok":(st==="ENROUTE"||st==="DISPATCHED")?"blue":"muted")+'">'+st+'</span></span>'+
+      '<span>'+escapeHtml(cs)+(u?" — "+escapeHtml(u.name):"")+' <span class="pill '+(st==="ONSCENE"?"ok":(st==="ENROUTE"||st==="DISPATCHED")?"blue":"muted")+'">'+escapeHtml(C.unitStatusLabel(st))+'</span></span>'+
       '<button class="btn sm ghost" data-action="unassignUnit" data-call="'+c.id+'" data-unit="'+escapeHtml(cs)+'">Remove</button>'+
       '</div>';
   }).join("") : '<div class="small-muted">No units assigned yet.</div>';
@@ -886,7 +905,7 @@ function renderUnits(){
         C.UNIT_TYPES.map(function(t){ return '<option value="'+escapeHtml(t)+'" '+(t===u.type?"selected":"")+'>'+escapeHtml(t)+'</option>'; }).join("")+
         (C.UNIT_TYPES.indexOf(u.type)===-1 && u.type ? '<option value="'+escapeHtml(u.type)+'" selected>'+escapeHtml(u.type)+'</option>' : '')+
         '</select></td>'+
-        '<td><span class="pill '+(u.status==="AVAILABLE"?"ok":u.status==="OFFDUTY"?"muted":"blue")+'">'+u.status+'</span></td>'+
+        '<td><span class="pill '+(u.status==="AVAILABLE"?"ok":u.status==="OFFDUTY"?"muted":u.status==="BUSY"?"warn":"blue")+'">'+escapeHtml(C.unitStatusLabel(u.status))+'</span></td>'+
         '<td class="mono small-muted">'+fmtAgo(u.statusSince)+'</td>'+
 
         '<td><select multiple class="unitSitesSel" data-unit="'+escapeHtml(u.callsign)+'" size="'+Math.min(4, Math.max(2, STATE.posts.length))+'" style="min-width:150px;font-size:12px;">'+
