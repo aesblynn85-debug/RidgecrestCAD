@@ -49,10 +49,28 @@
  var UNIT_TYPES = ["Foot Post","Vehicle Patrol","Golf Cart Patrol","Bike Patrol","K9 Unit","Supervisor","Console / Dispatch","Other"];
 
  var CALL_CODES = [
-   "10-05 Unsecured Door / Window","10-07 Parking Violation BOLO","10-08L Patrol Tour","10-19 Shift Change",
-   "10-31 Trespass / Unwanted Person","10-41 Access Control Issue","10-41 Monitoring Exit Only","10-52 Medical Emergency / EMS Needed",
-   "10-62 Intrusion Alarm Activation","10-99 Monitor Exit Only"
-   ];
+   "Signal 3 — Fire Alarm","Signal 5 — Bomb Threat","Signal 14 — Threats","Signal 19 — Smoke Odor",
+   "Signal 22 — Area Check","Signal 29 — Fight","Signal 33 — Fire","Signal 36 — HAZMAT",
+   "Signal 41 — Accident","Signal 54 — Suspicious Person/Vehicle","Signal 72 — Parking Lot Violation","Signal 92 — Gas Leak",
+   "Signal 93 — Trespassing","Signal 94 — Loitering","10-37 Safety Violation","10-59 Escort"
+];
+
+/* Guard/unit status codes shown in the Unit Status dropdown (Dispatch tab) and the Units
+roster — [internal STATE code, radio code + label shown to users]. The code on the left is
+what's stored in units.status and referenced throughout dispatch/call logic; only the label
+on the right is what guards actually see. */
+var UNIT_STATUSES = [
+["AVAILABLE","10-8 In Service"],
+["DISPATCHED","10-12 Dispatched"],
+["ENROUTE","10-75 Enroute"],
+["ONSCENE","10-7 On Scene"],
+["BUSY","10-6 Busy Unavailable"],
+["OFFDUTY","10-10 Temp Out of Service"]
+];
+function unitStatusLabel(code){
+var f = UNIT_STATUSES.find(function(s){ return s[0]===code; });
+return f ? f[1] : code;
+}
 
  var PRIORITIES = {1:"Emergency",2:"Urgent",3:"Routine",4:"Log Only"};
   var RECEIVED_VIA = ["Phone","Radio","Alarm Co.","Walk-In","Camera / CCTV","Guard App","Self-Initiated (Field)"];
@@ -483,7 +501,8 @@ function wireGlobal(){
    get session(){return session;}, set session(v){session=v;},
    uiState:uiState, NAV:NAV, REPORT_TYPES:REPORT_TYPES, VIOLATION_TYPES:VIOLATION_TYPES, ACTION_TAKEN_OPTS:ACTION_TAKEN_OPTS,
    CALL_CODES:CALL_CODES, PRIORITIES:PRIORITIES, RECEIVED_VIA:RECEIVED_VIA, currentUnit:currentUnit, todayCode:todayCode, pad:pad,
-   UNIT_TYPES:UNIT_TYPES, mySitePostId:mySitePostId, guardAssignedSiteIds:guardAssignedSiteIds
+   UNIT_TYPES:UNIT_TYPES, mySitePostId:mySitePostId, guardAssignedSiteIds:guardAssignedSiteIds,
+ UNIT_STATUSES:UNIT_STATUSES, unitStatusLabel:unitStatusLabel
  };
 
  /* ---------------- init ---------------- */
