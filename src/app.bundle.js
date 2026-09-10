@@ -65,7 +65,8 @@ var UNIT_STATUSES = [
 ["ENROUTE","10-75 Enroute"],
 ["ONSCENE","10-7 On Scene"],
 ["BUSY","10-6 Busy Unavailable"],
-["OFFDUTY","10-10 Temp Out of Service"]
+["OFFDUTY","10-10 Temp Out of Service"],
+["ENDSHIFT","10-42 Off Duty"]
 ];
 function unitStatusLabel(code){
 var f = UNIT_STATUSES.find(function(s){ return s[0]===code; });
@@ -283,7 +284,7 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
    if(session.role==="CLIENT" && route!=="trucks"){ route = "trucks"; location.hash = "#trucks"; }
    var openCalls = STATE.calls.filter(function(c){ return c.status!=="CLEARED"; }).length;
    var pending = STATE.calls.filter(function(c){ return c.status==="PENDING"; }).length;
-   var onDuty = STATE.units.filter(function(u){ return u.status!=="OFFDUTY"; });
+   var onDuty = STATE.units.filter(function(u){ return (u.status!=="OFFDUTY"&&u.status!=="ENDSHIFT"); });
    var avail = STATE.units.filter(function(u){ return u.status==="AVAILABLE"; });
    var statsHtml = session.role==="CLIENT" ? '' : ('<div class="stats">'+
     '<div class="stat"><div class="n">'+openCalls+'</div><div class="l">Open</div></div>'+
@@ -646,7 +647,7 @@ html += '<div class="card"><div class="section-head"><h2>New Call Intake</h2><sp
   html += '</div>';
 
 // Unit status
-html += '<div class="card"><div class="section-head"><h2>Unit Status</h2><span class="meta">'+STATE.units.filter(function(u){return u.status!=="OFFDUTY";}).length+' on duty</span></div>';
+html += '<div class="card"><div class="section-head"><h2>Unit Status</h2><span class="meta">'+STATE.units.filter(function(u){return (u.status!=="OFFDUTY"&&u.status!=="ENDSHIFT");}).length+' on duty</span></div>';
   C.UNIT_STATUSES.map(function(s){return s[0];}).forEach(function(st){
 var us = STATE.units.filter(function(u){ return u.status===st; });
 if(!us.length) return;
@@ -892,7 +893,7 @@ function wireCallHistory(){
 /* ---------------- UNITS ---------------- */
 function renderUnits(){
   var C = window.__CAD;
-  var onDuty = STATE.units.filter(function(u){return u.status!=="OFFDUTY";}).length;
+  var onDuty = STATE.units.filter(function(u){return (u.status!=="OFFDUTY"&&u.status!=="ENDSHIFT");}).length;
   var html = '<div class="card"><div class="section-head"><h2>Guard &amp; Unit Roster</h2><span class="meta">'+onDuty+' on duty / '+STATE.units.length+' total</span></div>'+
     '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn sm primary" data-action="addUnit">+ Add unit</button></div>'+
     '<div class="small-muted" style="margin-bottom:8px;">Assigned Sites is the pool of sites a guard can work — ctrl/cmd-click to select more than one. Post is the ONE site they are on for the current shift; it also auto-fills the Post/Site field when they self-initiate a call, report, parking violation, or truck log. Guards can set their own Post from the "My Site" picker in their sidebar.</div>'+
@@ -905,7 +906,7 @@ function renderUnits(){
         C.UNIT_TYPES.map(function(t){ return '<option value="'+escapeHtml(t)+'" '+(t===u.type?"selected":"")+'>'+escapeHtml(t)+'</option>'; }).join("")+
         (C.UNIT_TYPES.indexOf(u.type)===-1 && u.type ? '<option value="'+escapeHtml(u.type)+'" selected>'+escapeHtml(u.type)+'</option>' : '')+
         '</select></td>'+
-        '<td><span class="pill '+(u.status==="AVAILABLE"?"ok":u.status==="OFFDUTY"?"muted":u.status==="BUSY"?"warn":"blue")+'">'+escapeHtml(C.unitStatusLabel(u.status))+'</span></td>'+
+        '<td><span class="pill '+(u.status==="AVAILABLE"?"ok":(u.status==="OFFDUTY"||u.status==="ENDSHIFT")?"muted":u.status==="BUSY"?"warn":"blue")+'">'+escapeHtml(C.unitStatusLabel(u.status))+'</span></td>'+
         '<td class="mono small-muted">'+fmtAgo(u.statusSince)+'</td>'+
 
         '<td><select multiple class="unitSitesSel" data-unit="'+escapeHtml(u.callsign)+'" size="'+Math.min(4, Math.max(2, STATE.posts.length))+'" style="min-width:150px;font-size:12px;">'+
@@ -1055,7 +1056,7 @@ function renderChat(){
   var ch = STATE.chat.channels.find(function(c){return c.id===uiState.chatChannel;}) || STATE.chat.channels[0];
   var msgs = STATE.chat.messages.filter(function(m){return m.channel===ch.id;});
   var activeBolo = STATE.chat.messages.filter(function(m){return m.bolo;}).length;
-  var onDuty = STATE.units.filter(function(u){return u.status!=="OFFDUTY";});
+  var onDuty = STATE.units.filter(function(u){return (u.status!=="OFFDUTY"&&u.status!=="ENDSHIFT");});
   var html = '<div class="section-head"><h2>Patrol Chat</h2><span class="meta">'+onDuty.length+' on duty · '+STATE.chat.channels.length+' channels'+(activeBolo?' · <span style="color:hsl(var(--destructive));">⚠ '+activeBolo+' active BOLO</span>':'')+'</span></div>';
   html += '<div class="two-col">';
   html += '<div class="card"><div class="small-muted" style="margin-bottom:6px;text-transform:uppercase;">Channels</div>'+
@@ -1176,7 +1177,6 @@ function wireTrucks(){
     });
     });
 }
-
 /* ---------------- PARKING LOT VIOLATIONS ---------------- */
 function renderParking(){
   var C = window.__CAD;
@@ -1943,6 +1943,5 @@ function wireMap(){
   else { map.setView(DEFAULT_MAP_CENTER, 10); }
   map.on("moveend", function(){ _liveMapView = {center: map.getCenter(), zoom: map.getZoom()}; });
 }
-
 document.addEventListener("DOMContentLoaded", init);
 })();
