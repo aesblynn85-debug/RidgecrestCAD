@@ -43,18 +43,18 @@ html += '<div class="card"><div class="section-head"><h2>New Call Intake</h2><sp
 
 // Unit status
 html += '<div class="card"><div class="section-head"><h2>Unit Status</h2><span class="meta">'+STATE.units.filter(function(u){return u.status!=="OFFDUTY";}).length+' on duty</span></div>';
-  ["AVAILABLE","DISPATCHED","ONSCENE","OFFDUTY"].forEach(function(st){
-    var us = STATE.units.filter(function(u){ return u.status===st; });
-    if(!us.length) return;
-    html += '<div class="small-muted" style="margin:10px 0 4px;text-transform:uppercase;letter-spacing:.05em;">'+st+' ('+us.length+')</div>';
-    html += us.map(function(u){
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid hsl(var(--border)/.5);">'+
-        '<div><div style="font-weight:600;">'+escapeHtml(u.callsign)+' '+escapeHtml(u.name)+'</div><div class="small-muted">'+escapeHtml(u.type)+' · '+escapeHtml(u.post||"")+' · '+escapeHtml(u.shift||"")+'</div></div>'+
-        '<select class="unitStatusSel" data-unit="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:11px;padding:4px 6px;">'+
-        ["AVAILABLE","DISPATCHED","ONSCENE","OFFDUTY"].map(function(s){ return '<option value="'+s+'" '+(s===u.status?"selected":"")+'>'+s+'</option>'; }).join("")+
-        '</select></div>';
-    }).join("");
-  });
+  C.UNIT_STATUSES.map(function(s){return s[0];}).forEach(function(st){
+var us = STATE.units.filter(function(u){ return u.status===st; });
+if(!us.length) return;
+html += '<div class="small-muted" style="margin:10px 0 4px;text-transform:uppercase;letter-spacing:.05em;">'+escapeHtml(C.unitStatusLabel(st))+' ('+us.length+')</div>';
+html += us.map(function(u){
+return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid hsl(var(--border)/.5);">'+
+'<div><div style="font-weight:600;">'+escapeHtml(u.callsign)+' '+escapeHtml(u.name)+'</div><div class="small-muted">'+escapeHtml(u.type)+' · '+escapeHtml(u.post||"")+' · '+escapeHtml(u.shift||"")+'</div></div>'+
+'<select class="unitStatusSel" data-unit="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:11px;padding:4px 6px;">'+
+C.UNIT_STATUSES.map(function(s){ return '<option value="'+s[0]+'" '+(s[0]===u.status?"selected":"")+'>'+escapeHtml(s[1])+'</option>'; }).join("")+
+'</select></div>';
+}).join("");
+});
 
 html += '<div class="small-muted" style="margin:14px 0 6px;text-transform:uppercase;letter-spacing:.05em;">Live Log</div><div style="max-height:260px;overflow-y:auto;">';
   html += STATE.activityLog.slice(0,12).map(function(l){
@@ -80,7 +80,7 @@ function renderCallModal(c){
     var u = STATE.units.find(function(x){return x.callsign===cs;});
     var st = u ? u.status : "?";
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">'+
-      '<span>'+escapeHtml(cs)+(u?" — "+escapeHtml(u.name):"")+' <span class="pill '+(st==="ONSCENE"?"ok":(st==="ENROUTE"||st==="DISPATCHED")?"blue":"muted")+'">'+st+'</span></span>'+
+      '<span>'+escapeHtml(cs)+(u?" — "+escapeHtml(u.name):"")+' <span class="pill '+(st==="ONSCENE"?"ok":(st==="ENROUTE"||st==="DISPATCHED")?"blue":"muted")+'">'+escapeHtml(C.unitStatusLabel(st))+'</span></span>'+
       '<button class="btn sm ghost" data-action="unassignUnit" data-call="'+c.id+'" data-unit="'+escapeHtml(cs)+'">Remove</button>'+
       '</div>';
   }).join("") : '<div class="small-muted">No units assigned yet.</div>';
@@ -301,7 +301,7 @@ function renderUnits(){
         C.UNIT_TYPES.map(function(t){ return '<option value="'+escapeHtml(t)+'" '+(t===u.type?"selected":"")+'>'+escapeHtml(t)+'</option>'; }).join("")+
         (C.UNIT_TYPES.indexOf(u.type)===-1 && u.type ? '<option value="'+escapeHtml(u.type)+'" selected>'+escapeHtml(u.type)+'</option>' : '')+
         '</select></td>'+
-        '<td><span class="pill '+(u.status==="AVAILABLE"?"ok":u.status==="OFFDUTY"?"muted":"blue")+'">'+u.status+'</span></td>'+
+        '<td><span class="pill '+(u.status==="AVAILABLE"?"ok":u.status==="OFFDUTY"?"muted":u.status==="BUSY"?"warn":"blue")+'">'+escapeHtml(C.unitStatusLabel(u.status))+'</span></td>'+
         '<td class="mono small-muted">'+fmtAgo(u.statusSince)+'</td>'+
 
         '<td><select multiple class="unitSitesSel" data-unit="'+escapeHtml(u.callsign)+'" size="'+Math.min(4, Math.max(2, STATE.posts.length))+'" style="min-width:150px;font-size:12px;">'+
