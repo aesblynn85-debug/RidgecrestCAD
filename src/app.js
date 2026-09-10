@@ -65,7 +65,8 @@ var UNIT_STATUSES = [
 ["ENROUTE","10-75 Enroute"],
 ["ONSCENE","10-7 On Scene"],
 ["BUSY","10-6 Busy Unavailable"],
-["OFFDUTY","10-10 Temp Out of Service"]
+["OFFDUTY","10-10 Temp Out of Service"],
+["ENDSHIFT","10-42 Off Duty"]
 ];
 function unitStatusLabel(code){
 var f = UNIT_STATUSES.find(function(s){ return s[0]===code; });
@@ -283,7 +284,7 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
    if(session.role==="CLIENT" && route!=="trucks"){ route = "trucks"; location.hash = "#trucks"; }
    var openCalls = STATE.calls.filter(function(c){ return c.status!=="CLEARED"; }).length;
    var pending = STATE.calls.filter(function(c){ return c.status==="PENDING"; }).length;
-   var onDuty = STATE.units.filter(function(u){ return u.status!=="OFFDUTY"; });
+   var onDuty = STATE.units.filter(function(u){ return (u.status!=="OFFDUTY"&&u.status!=="ENDSHIFT"); });
    var avail = STATE.units.filter(function(u){ return u.status==="AVAILABLE"; });
    var statsHtml = session.role==="CLIENT" ? '' : ('<div class="stats">'+
     '<div class="stat"><div class="n">'+openCalls+'</div><div class="l">Open</div></div>'+
