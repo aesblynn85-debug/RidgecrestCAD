@@ -82,7 +82,7 @@ return f ? f[1] : code;
  var route = (location.hash || "#dispatch").replace("#","");
   var session = null; // {callsign,name,role}
  try { session = JSON.parse(sessionStorage.getItem("cad_session")||"null"); } catch(e){}
-  var uiState = { chatChannel:"all-hands", reportsTab:"incident", reportsFilter:"all", loginErr:"", pendingPin:"", selectedReport:null, consoleUnit: (session && session.defaultUnit) || "" };
+  var uiState = { chatChannel:"all-hands", reportsTab:"incident", reportsFilter:"all", loginErr:"", pendingPin:"", selectedReport:null, consoleUnit: (session && session.defaultUnit) || "", sidebarOpen:false };
 
  function uid(prefix){ return prefix+"-"+Math.random().toString(36).slice(2,9); }
   function nowIso(){ return new Date().toISOString(); }
@@ -293,7 +293,7 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
     '</div>');
 
   root.innerHTML =
-    '<div id="sidebar">'+
+    '<div id="sidebarBackdrop" class="'+(uiState.sidebarOpen?"show":"")+'"></div>'+'<div id="sidebar" class="'+(uiState.sidebarOpen?"open":"")+'">'+
     '<div class="brand"><div class="mark">R</div><div><div class="name">Ridgecrest CAD</div><div class="sub">Dispatch Console</div></div></div>'+
     '<ul id="navlist">'+ NAV.filter(function(n){ return session.role==="CLIENT" ? n.id==="trucks" : (!n.supvOnly || session.role==="SUPV"); }).map(function(n){
       return '<li><button data-nav="'+n.id+'" class="'+(route===n.id?"active":"")+'"><span class="ic">'+n.ic+'</span>'+escapeHtml(n.label)+'</button></li>';
@@ -310,7 +310,7 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
     '</div>'+
     '<div id="app">'+
     '<div id="topbar">'+
-    '<div class="title">Ridgecrest Threat Advisory <span class="sub">Operations Center</span></div>'+
+    '<div style="display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden;"><button id="navToggle" type="button" aria-label="Toggle menu">☰</button><div class="title">Ridgecrest Threat Advisory <span class="sub">Operations Center</span></div></div>'+
     statsHtml+
     '<div class="clock"><div id="clockNow">'+fmtClock()+'</div><div>'+fmtDate()+'</div></div>'+
     '</div>'+
@@ -454,9 +454,9 @@ function wireLogin(){
  }
 function wireGlobal(){
    document.querySelectorAll("[data-nav]").forEach(function(b){
-     b.addEventListener("click", function(){ nav(b.getAttribute("data-nav")); });
+     b.addEventListener("click", function(){ uiState.sidebarOpen=false; nav(b.getAttribute("data-nav")); });
    });
-   var so = document.querySelector('[data-action="signout"]');
+   var navToggle=document.getElementById("navToggle");if(navToggle)navToggle.addEventListener("click",function(){uiState.sidebarOpen=!uiState.sidebarOpen;render();});var sidebarBackdropEl=document.getElementById("sidebarBackdrop");if(sidebarBackdropEl)sidebarBackdropEl.addEventListener("click",function(){uiState.sidebarOpen=false;render();});var so = document.querySelector('[data-action="signout"]');
    if(so) so.addEventListener("click", function(){
      logActivity("AUTH", session.callsign, session.name+" signed out");
      stopLiveTracking();
