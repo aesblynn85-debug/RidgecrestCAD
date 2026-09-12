@@ -737,9 +737,9 @@ function wireDispatch(){
                         var seq = DB.configured ? await DB.counters.next("call").catch(function(){ return (STATE.callSeq||0)+1; }) : (STATE.callSeq||0)+1;
     STATE.callSeq = seq;
     var id = window.__CAD.todayCode()+"-"+String(seq).padStart(4,"0");
-    var call = {
+    var exactLoc = fd.get("location")||""; var postAddr = post ? (post.address||"") : ""; var locText = postAddr && exactLoc ? (postAddr+" — "+exactLoc) : (postAddr || exactLoc); var call = {
       id:id, code:fd.get("code")||"", nature:fd.get("nature")||fd.get("code")||"", priority:selectedPrio,
-      post: postId ? (postId+" "+post.name) : "", location: fd.get("location")||"", reportingParty: fd.get("rp")||"",
+      post: postId ? (postId+" "+post.name) : "", location: locText, reportingParty: fd.get("rp")||"",
       callback: fd.get("callback")||"", receivedVia: selectedVia, status:"PENDING", createdAt: nowIso(),
       assignedUnits:[], narrativeSupplements:[]
     };
@@ -1480,7 +1480,7 @@ function wireReports(){
     var r = {
       id:id, type:typeInfo[0], typeLabel:typeInfo[1], status: status==="DRAFT"?"DRAFT":"SUBMITTED",
       attachToCall: fd.get("call")||"Standalone", post: postId?(postId+" "+(post?post.name:"")):"",
-      occurred: new Date(fd.get("occurred")).toISOString(), location: fd.get("location")||"", subject: fd.get("subject"),
+      occurred: new Date(fd.get("occurred")).toISOString(), location: locText, subject: fd.get("subject"),
       narrative: fd.get("narrative")||"", involvedParties: fd.get("involvedParties")||"", witnesses: fd.get("witnesses")||"",
       propertyDamage: fd.get("propertyDamage")||"", estLoss: fd.get("estLoss")||"", actionTaken: fd.get("actionTaken")||"",
       notifications: {injury: fd.get("injury")==="on", ems: fd.get("ems")==="on", police: fd.get("police")==="on"},
