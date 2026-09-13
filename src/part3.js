@@ -891,18 +891,36 @@ return '<div style="display:flex;justify-content:space-between;align-items:cente
 '</div></div>';
 }
 
+function distFeet(lat1, lng1, lat2, lng2){
+var R = 20902231;
+var toRad = function(d){ return d*Math.PI/180; };
+var dLat = toRad(lat2-lat1), dLng = toRad(lng2-lng1);
+var a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)*Math.sin(dLng/2);
+var c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+return R*c;
+}
 function wireTours(){
 document.querySelectorAll("[data-scan-point]").forEach(function(b){
+var origLabel = b.textContent;
 b.addEventListener("click", async function(){
 var pointId = b.getAttribute("data-scan-point"); var tourId = b.getAttribute("data-tour");
+var p = (STATE.tourPoints||[]).find(function(x){return x.id===pointId;});
 b.disabled = true; b.textContent = "Scanning…";
 var loc = await getGeo();
+if(!loc){ b.disabled = false; b.textContent = origLabel; toast("Couldn't get this device's GPS position — check location permissions and try again."); return; }
+if(p && typeof p.lat==="number" && typeof p.lng==="number"){
+var ft = distFeet(p.lat, p.lng, loc.lat, loc.lng);
+var maxFt = p.radiusFt || 25;
+if(ft > maxFt){
+b.disabled = false; b.textContent = origLabel;
+toast("Too far from this checkpoint ("+Math.round(ft)+" ft away, must be within "+maxFt+" ft).");
+return;
+}
+}
 var scan = {id:uid("scan"), tourPointId:pointId, tourId:tourId, callsign:session.callsign, at:nowIso(),
-lat: loc?loc.lat:null, lng: loc?loc.lng:null, accuracy: loc?loc.accuracy:null};
-STATE.tourPointScans = STATE.tourPointScans||[];
-STATE.tourPointScans.push(scan);
+lat: loc.lat, lng: loc.lng, accuracy: loc.accuracy};
+STATE.tourPointScans = STATE.tourPointScans||[]; STATE.tourPointScans.push(scan);
 var t = STATE.patrolTours.find(function(x){return x.id===tourId;});
-var p = (STATE.tourPoints||[]).find(function(x){return x.id===pointId;});
 logActivity("TOUR", session.callsign, "Scanned "+(p?p.name:"a stop")+" on "+(t?t.name:"a patrol tour"));
 persist(function(){ return DB.tours.scanPoint(scan); }, "tour point scan");
 });
