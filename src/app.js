@@ -267,7 +267,9 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
 
  /* ---------------- router / shell ---------------- */
  window.addEventListener("hashchange", function(){
+   var prevRoute = route;
    route = (location.hash||"#dispatch").replace("#","");
+   if(prevRoute==="radio" && route!=="radio") teardownRadio();
    render();
  });
 
@@ -460,6 +462,7 @@ function wireGlobal(){
    if(so) so.addEventListener("click", function(){
      logActivity("AUTH", session.callsign, session.name+" signed out");
      stopLiveTracking();
+     teardownRadio();
      session = null;
      sessionStorage.removeItem("cad_session");
      render();
@@ -485,6 +488,7 @@ function wireGlobal(){
    if(route==="sites") wireSites();
    if(route==="tours") wireTours();
    if(route==="chat") wireChat();
+   if(route==="radio") wireRadio();
    if(route==="trucks") wireTrucks();
    if(route==="parking") wireParking();
    if(route==="reports") wireReports();
