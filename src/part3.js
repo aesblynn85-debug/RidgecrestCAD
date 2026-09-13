@@ -800,11 +800,7 @@ if(session.role==="SUPV") return renderToursSupv();
 return renderToursGuard();
 }
 
-function renderToursGuard(){
-var tours = myToursToday();
-var html = '<div class="section-head"><h2>Patrol Tours</h2><span class="meta">'+tours.length+' assigned today</span></div>';
-if(!tours.length){ html += '<div class="empty-state">No patrol tours assigned to you for today.</div>'; return html; }
-html += tours.map(function(t){
+function renderMyTourCard(t){
 var points = tourPointsFor(t.id);
 var post = STATE.posts.find(function(p){return p.id===t.postId;});
 return '<div class="card" style="margin-bottom:16px;"><div style="font-weight:700;">'+escapeHtml(t.name)+'</div>'+
@@ -816,13 +812,24 @@ return '<div class="list-item"><div class="top"><span>'+(i+1)+'. '+escapeHtml(p.
 '<button class="btn sm primary" style="margin-top:6px;" data-scan-point="'+p.id+'" data-tour="'+t.id+'">'+(last?"Scan again":"Scan this stop")+'</button></div>';
 }).join("") : '<div class="empty-state">This tour has no stops yet.</div>')+
 '</div>';
-}).join("");
+}
+
+function renderToursGuard(){
+var tours = myToursToday();
+var html = '<div class="section-head"><h2>Patrol Tours</h2><span class="meta">'+tours.length+' assigned today</span></div>';
+if(!tours.length){ html += '<div class="empty-state">No patrol tours assigned to you for today.</div>'; return html; }
+html += tours.map(renderMyTourCard).join("");
 return html;
 }
 
 function renderToursSupv(){
 var tours = STATE.patrolTours||[];
+var mine = myToursToday();
 var html = '<div class="section-head"><h2>Patrol Tours</h2><span class="meta">'+tours.filter(function(t){return t.active;}).length+' active</span></div>';
+if(mine.length){
+html += '<div style="font-weight:700;margin:0 0 10px;">My Tours Today</div>';
+html += mine.map(renderMyTourCard).join("");
+}
 html += '<div class="two-col">';
 html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">New Patrol Tour</div><form id="tourForm">'+
 '<label class="field"><span class="lbl">Tour Name <span class="req">*</span></span><input type="text" name="name" required placeholder="North Perimeter, Warehouse Interior…"></label>'+
@@ -841,7 +848,7 @@ var post = STATE.posts.find(function(p){return p.id===t.postId;});
 var pointCount = tourPointsFor(t.id).length;
 var assignCount = tourAssignmentsFor(t.id).filter(function(a){return a.shiftDate===todayDateStr();}).length;
 return '<div class="list-item" data-open-tour="'+t.id+'"><div class="top"><span>'+escapeHtml(t.name)+'</span><span class="pill '+(t.active?"ok":"muted")+'">'+(t.active?"ACTIVE":"INACTIVE")+'</span></div>'+
-'<div class="meta">'+(post?escapeHtml(post.id+" — "+post.name):"No site")+' · '+pointCount+' stop'+(pointCount===1?"":"s")+' · '+assignCount+' guard'+(assignCount===1?"":"s")+' assigned today</div></div>';
+'<div class="meta">'+(post?escapeHtml(post.id+" — "+post.name):"No site")+' · '+pointCount+' stop'+(pointCount===1?"":"s")+' · '+assignCount+' assigned today</div></div>';
 }).join("");
 }
 html += '</div></div>';
@@ -857,7 +864,7 @@ function renderTourModal(t){
 var post = STATE.posts.find(function(p){return p.id===t.postId;});
 var points = tourPointsFor(t.id);
 var assignments = tourAssignmentsFor(t.id).slice().sort(function(a,b){return new Date(b.assignedAt)-new Date(a.assignedAt);});
-var guards = STATE.users.filter(function(u){return u.role==="GUARD" && u.active;});
+var guards = STATE.users.filter(function(u){return (u.role==="GUARD"||u.role==="SUPV") && u.active;});
 return '<div class="modal-backdrop" data-close-tour="1"><div class="modal" onclick="event.stopPropagation()">'+
 '<button class="close" data-action="closeTourModal">✕</button>'+
 '<h2>'+escapeHtml(t.name)+'</h2>'+
@@ -872,7 +879,7 @@ return '<div style="display:flex;justify-content:space-between;align-items:cente
 '<button class="btn sm ghost" data-action="removeTourPoint" data-point="'+p.id+'" data-tour="'+t.id+'">Remove</button></div>';
 }).join("") : '<div class="small-muted">No stops yet — use "Add point here" while standing at each stop.</div>')+
 '</div>'+
-'<div class="divider"></div><div style="font-weight:700;margin-bottom:8px;">Assign to Guards</div>'+
+'<div class="divider"></div><div style="font-weight:700;margin-bottom:8px;">Assign to Staff</div>'+
 '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;"><select id="tourAssignGuard" style="flex:1;">'+
 guards.map(function(g){return '<option value="'+escapeHtml(g.callsign)+'">'+escapeHtml(g.callsign+" — "+g.name)+'</option>';}).join("")+
 '</select><input type="date" id="tourAssignDate" value="'+todayDateStr()+'"><button class="btn sm" data-action="assignTour" data-tour="'+t.id+'">Assign</button></div>'+
@@ -885,7 +892,6 @@ return '<div style="display:flex;justify-content:space-between;align-items:cente
 }
 
 function wireTours(){
-if(session.role==="SUPV"){ wireToursSupv(); return; }
 document.querySelectorAll("[data-scan-point]").forEach(function(b){
 b.addEventListener("click", async function(){
 var pointId = b.getAttribute("data-scan-point"); var tourId = b.getAttribute("data-tour");
@@ -901,6 +907,7 @@ logActivity("TOUR", session.callsign, "Scanned "+(p?p.name:"a stop")+" on "+(t?t
 persist(function(){ return DB.tours.scanPoint(scan); }, "tour point scan");
 });
 });
+if(session.role==="SUPV"){ wireToursSupv(); }
 }
 
 function wireToursSupv(){
