@@ -358,7 +358,15 @@ re-publishing the entire app state on every change. */
              scanPoint: function(s){ return insertRow("tour_point_scans", tourScanToRow(s)); }
       },
 
-  /* Subscribe to live changes from other guards' sessions. onChange is called with the
+      /* Radio PTT: no new tables — voice is live peer-to-peer WebRTC, signalled entirely over a
+      Supabase Realtime channel (broadcast for offer/answer/ICE, presence for who is on the
+      channel right now). This just exposes a raw channel handle since nothing here needs to be
+      persisted to Postgres. */
+      radio: {
+            channel: function(name, opts){ if(!sb) return null; return sb.channel(name, opts||{}); }
+      },
+
+/* Subscribe to live changes from other guards' sessions. onChange is called with the
       table name whenever a row changes; callers typically refetch that slice and re-render. */
       subscribeRealtime: function(onChange){
              if(!sb) return null;
