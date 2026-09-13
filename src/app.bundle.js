@@ -2170,3 +2170,234 @@ function wireMap(){
 }
 document.addEventListener("DOMContentLoaded", init);
 })();
+
+
+/* ---------------- PATROL TOURS ----------------
+A site (post) can have any number of patrol tours -- ordered routes of scan points. A
+supervisor builds a tour live: create it, then stand at each stop and tap "Add point here"
+to drop a scan point at the device's current GPS position (src/db.js DB.tours.addPoint).
+Supervisors also assign a tour to one or more guards for a shift date (tourAssignments --
+many-to-many, so a guard can hold several tours at once). A guard assigned to a tour today
+sees it here and taps "Scan" at each stop to log a checkpoint pass -- their own device's GPS
+is recorded on the scan for reference only (see the note on tourScanFromRow in db.js); it is
+never compared against the point's radiusFt, so a scan always succeeds regardless of where
+the guard actually is. */
+function todayDateStr(){ return new Date().toISOString().slice(0,10); }
+
+function tourPointsFor(tourId){
+return (STATE.tourPoints||[]).filter(function(p){return p.tourId===tourId;}).sort(function(a,b){return (a.seq||0)-(b.seq||0);});
+}
+function tourAssignmentsFor(tourId){
+return (STATE.tourAssignments||[]).filter(function(a){return a.tourId===tourId;});
+}
+function myToursToday(){
+var today = todayDateStr();
+var mine = (STATE.tourAssignments||[]).filter(function(a){return a.guardCallsign===session.callsign && a.shiftDate===today;}).map(function(a){return a.tourId;});
+return (STATE.patrolTours||[]).filter(function(t){return t.active && mine.indexOf(t.id)!==-1;});
+}
+function lastScanFor(pointId){
+var scans = (STATE.tourPointScans||[]).filter(function(s){return s.tourPointId===pointId && s.callsign===session.callsign;});
+if(!scans.length) return null;
+return scans.slice().sort(function(a,b){return new Date(b.at)-new Date(a.at);})[0];
+}
+
+function renderTours(){
+if(session.role==="SUPV") return renderToursSupv();
+return renderToursGuard();
+}
+
+function renderToursGuard(){
+var tours = myToursToday();
+var html = '<div class="section-head"><h2>Patrol Tours</h2><span class="meta">'+tours.length+' assigned today</span></div>';
+if(!tours.length){ html += '<div class="empty-state">No patrol tours assigned to you for today.</div>'; return html; }
+html += tours.map(function(t){
+var points = tourPointsFor(t.id);
+var post = STATE.posts.find(function(p){return p.id===t.postId;});
+return '<div class="card" style="margin-bottom:16px;"><div style="font-weight:700;">'+escapeHtml(t.name)+'</div>'+
+'<div class="small-muted" style="margin-bottom:10px;">'+(post?escapeHtml(post.id+" — "+post.name):"No site")+' · '+points.length+' stop'+(points.length===1?"":"s")+'</div>'+
+(points.length ? points.map(function(p, i){
+var last = lastScanFor(p.id);
+return '<div class="list-item"><div class="top"><span>'+(i+1)+'. '+escapeHtml(p.name||"Stop "+(i+1))+'</span>'+
+(last? '<span class="pill ok">Scanned '+fmtAgo(last.at)+'</span>' : '<span class="pill muted">Not scanned yet</span>')+'</div>'+
+'<button class="btn sm primary" style="margin-top:6px;" data-scan-point="'+p.id+'" data-tour="'+t.id+'">'+(last?"Scan again":"Scan this stop")+'</button></div>';
+}).join("") : '<div class="empty-state">This tour has no stops yet.</div>')+
+'</div>';
+}).join("");
+return html;
+}
+
+function renderToursSupv(){
+var tours = STATE.patrolTours||[];
+var html = '<div class="section-head"><h2>Patrol Tours</h2><span class="meta">'+tours.filter(function(t){return t.active;}).length+' active</span></div>';
+html += '<div class="two-col">';
+html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">New Patrol Tour</div><form id="tourForm">'+
+'<label class="field"><span class="lbl">Tour Name <span class="req">*</span></span><input type="text" name="name" required placeholder="North Perimeter, Warehouse Interior…"></label>'+
+'<label class="field"><span class="lbl">Site <span class="req">*</span></span><select name="post" required><option value="">Select site…</option>'+
+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+
+'</select></label>'+
+'<button type="submit" class="btn primary" style="width:100%;">Create tour</button></form>'+
+'<div class="small-muted" style="margin-top:10px;">After creating a tour, open it below to add scan points by walking the route — each "Add point here" tap drops a stop at your device\'s current GPS position.</div>'+
+'</div>';
+
+html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">All Tours</div>';
+if(!tours.length){ html += '<div class="empty-state">No patrol tours yet. Create the first one to the left.</div>'; }
+else {
+html += tours.map(function(t){
+var post = STATE.posts.find(function(p){return p.id===t.postId;});
+var pointCount = tourPointsFor(t.id).length;
+var assignCount = tourAssignmentsFor(t.id).filter(function(a){return a.shiftDate===todayDateStr();}).length;
+return '<div class="list-item" data-open-tour="'+t.id+'"><div class="top"><span>'+escapeHtml(t.name)+'</span><span class="pill '+(t.active?"ok":"muted")+'">'+(t.active?"ACTIVE":"INACTIVE")+'</span></div>'+
+'<div class="meta">'+(post?escapeHtml(post.id+" — "+post.name):"No site")+' · '+pointCount+' stop'+(pointCount===1?"":"s")+' · '+assignCount+' guard'+(assignCount===1?"":"s")+' assigned today</div></div>';
+}).join("");
+}
+html += '</div></div>';
+
+if(uiState.openTourId){
+var ot = tours.find(function(t){return t.id===uiState.openTourId;});
+if(ot) html += renderTourModal(ot);
+}
+return html;
+}
+
+function renderTourModal(t){
+var post = STATE.posts.find(function(p){return p.id===t.postId;});
+var points = tourPointsFor(t.id);
+var assignments = tourAssignmentsFor(t.id).slice().sort(function(a,b){return new Date(b.assignedAt)-new Date(a.assignedAt);});
+var guards = STATE.users.filter(function(u){return u.role==="GUARD" && u.active;});
+return '<div class="modal-backdrop" data-close-tour="1"><div class="modal" onclick="event.stopPropagation()">'+
+'<button class="close" data-action="closeTourModal">✕</button>'+
+'<h2>'+escapeHtml(t.name)+'</h2>'+
+'<div class="small-muted" style="margin-bottom:14px;">'+(post?escapeHtml(post.id+" — "+post.name):"No site")+'</div>'+
+'<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;"><button class="btn sm primary" data-action="addTourPoint" data-tour="'+t.id+'">Add point here</button>'+
+'<button class="btn sm" data-action="toggleTourActive" data-tour="'+t.id+'">'+(t.active?"Deactivate":"Reactivate")+'</button>'+
+'<button class="btn sm ghost" data-action="removeTour" data-tour="'+t.id+'">Delete tour</button></div>'+
+'<div class="field-block"><div class="k">Stops ('+points.length+')</div>'+
+(points.length ? points.map(function(p,i){
+return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid hsl(var(--border)/.5);">'+
+'<div><div>'+(i+1)+'. '+escapeHtml(p.name||"Stop "+(i+1))+'</div><div class="small-muted">'+(p.lat!=null?p.lat.toFixed(5)+", "+p.lng.toFixed(5):"No GPS captured")+'</div></div>'+
+'<button class="btn sm ghost" data-action="removeTourPoint" data-point="'+p.id+'" data-tour="'+t.id+'">Remove</button></div>';
+}).join("") : '<div class="small-muted">No stops yet — use "Add point here" while standing at each stop.</div>')+
+'</div>'+
+'<div class="divider"></div><div style="font-weight:700;margin-bottom:8px;">Assign to Guards</div>'+
+'<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;"><select id="tourAssignGuard" style="flex:1;">'+
+guards.map(function(g){return '<option value="'+escapeHtml(g.callsign)+'">'+escapeHtml(g.callsign+" — "+g.name)+'</option>';}).join("")+
+'</select><input type="date" id="tourAssignDate" value="'+todayDateStr()+'"><button class="btn sm" data-action="assignTour" data-tour="'+t.id+'">Assign</button></div>'+
+(assignments.length ? assignments.map(function(a){
+return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">'+
+'<span>'+escapeHtml(a.guardCallsign)+' — '+escapeHtml(a.shiftDate)+'</span>'+
+'<button class="btn sm ghost" data-action="unassignTour" data-assignment="'+a.id+'" data-tour="'+t.id+'">Remove</button></div>';
+}).join("") : '<div class="small-muted">Not assigned to anyone yet.</div>')+
+'</div></div>';
+}
+
+function wireTours(){
+if(session.role==="SUPV"){ wireToursSupv(); return; }
+document.querySelectorAll("[data-scan-point]").forEach(function(b){
+b.addEventListener("click", async function(){
+var pointId = b.getAttribute("data-scan-point"); var tourId = b.getAttribute("data-tour");
+b.disabled = true; b.textContent = "Scanning…";
+var loc = await getGeo();
+var scan = {id:uid("scan"), tourPointId:pointId, tourId:tourId, callsign:session.callsign, at:nowIso(),
+lat: loc?loc.lat:null, lng: loc?loc.lng:null, accuracy: loc?loc.accuracy:null};
+STATE.tourPointScans = STATE.tourPointScans||[];
+STATE.tourPointScans.push(scan);
+var t = STATE.patrolTours.find(function(x){return x.id===tourId;});
+var p = (STATE.tourPoints||[]).find(function(x){return x.id===pointId;});
+logActivity("TOUR", session.callsign, "Scanned "+(p?p.name:"a stop")+" on "+(t?t.name:"a patrol tour"));
+persist(function(){ return DB.tours.scanPoint(scan); }, "tour point scan");
+});
+});
+}
+
+function wireToursSupv(){
+var form = document.getElementById("tourForm");
+if(form) form.addEventListener("submit", function(e){
+e.preventDefault();
+var fd = new FormData(form);
+var name = (fd.get("name")||"").trim(); var postId = fd.get("post");
+if(!name || !postId){ toast("Tour name and site are required."); return; }
+var t = {id:uid("tour"), postId:postId, name:name, createdBy:session.callsign, createdAt:nowIso(), active:true};
+STATE.patrolTours = STATE.patrolTours||[];
+STATE.patrolTours.push(t);
+logActivity("TOUR", session.callsign, "Patrol tour created — "+name+" @ "+postId);
+form.reset();
+persist(function(){ return DB.tours.create(t); }, "patrol tour "+name);
+});
+document.querySelectorAll("[data-open-tour]").forEach(function(el){
+el.addEventListener("click", function(){ uiState.openTourId = el.getAttribute("data-open-tour"); render(); });
+});
+var bd = document.querySelector("[data-close-tour]");
+if(bd) bd.addEventListener("click", function(){ uiState.openTourId=null; render(); });
+var cbtn = document.querySelector('[data-action="closeTourModal"]');
+if(cbtn) cbtn.addEventListener("click", function(){ uiState.openTourId=null; render(); });
+
+var addPtBtn = document.querySelector('[data-action="addTourPoint"]');
+if(addPtBtn) addPtBtn.addEventListener("click", async function(){
+var tourId = addPtBtn.getAttribute("data-tour");
+addPtBtn.disabled = true; addPtBtn.textContent = "Capturing GPS…";
+var loc = await getGeo();
+addPtBtn.disabled = false; addPtBtn.textContent = "Add point here";
+if(!loc){ toast("Couldn't get this device's GPS position — check location permissions and try again."); return; }
+var name = prompt("Name this stop (e.g. \"North gate\", \"Loading dock 4\")")||"";
+var existing = tourPointsFor(tourId);
+var p = {id:uid("tourpt"), tourId:tourId, seq: existing.length+1, name:name, lat:loc.lat, lng:loc.lng, radiusFt:25, createdBy:session.callsign, createdAt:nowIso()};
+STATE.tourPoints = STATE.tourPoints||[];
+STATE.tourPoints.push(p);
+var t = STATE.patrolTours.find(function(x){return x.id===tourId;});
+logActivity("TOUR", session.callsign, "Added stop"+(name?" \""+name+"\"":"")+" to "+(t?t.name:"a patrol tour"));
+persist(function(){ return DB.tours.addPoint(p); }, "tour stop");
+});
+document.querySelectorAll('[data-action="removeTourPoint"]').forEach(function(b){
+b.addEventListener("click", function(){
+var pointId = b.getAttribute("data-point");
+if(!confirm("Remove this stop?")) return;
+STATE.tourPoints = (STATE.tourPoints||[]).filter(function(x){return x.id!==pointId;});
+logActivity("TOUR", session.callsign, "Removed a stop from a patrol tour");
+persist(function(){ return DB.tours.removePoint(pointId); }, "tour stop removal");
+});
+});
+var toggleBtn = document.querySelector('[data-action="toggleTourActive"]');
+if(toggleBtn) toggleBtn.addEventListener("click", function(){
+var tourId = toggleBtn.getAttribute("data-tour");
+var t = STATE.patrolTours.find(function(x){return x.id===tourId;});
+t.active = !t.active;
+logActivity("TOUR", session.callsign, (t.active?"Reactivated":"Deactivated")+" patrol tour "+t.name);
+persist(function(){ return DB.tours.setActive(tourId, t.active); }, "tour "+t.name+" active state");
+});
+var removeBtn = document.querySelector('[data-action="removeTour"]');
+if(removeBtn) removeBtn.addEventListener("click", function(){
+var tourId = removeBtn.getAttribute("data-tour");
+var t = STATE.patrolTours.find(function(x){return x.id===tourId;});
+if(!confirm("Delete patrol tour \""+(t?t.name:"")+"\"? This cannot be undone.")) return;
+STATE.patrolTours = STATE.patrolTours.filter(function(x){return x.id!==tourId;});
+STATE.tourPoints = (STATE.tourPoints||[]).filter(function(x){return x.tourId!==tourId;});
+STATE.tourAssignments = (STATE.tourAssignments||[]).filter(function(x){return x.tourId!==tourId;});
+uiState.openTourId = null;
+logActivity("TOUR", session.callsign, "Deleted patrol tour "+(t?t.name:tourId));
+persist(function(){ return DB.tours.remove(tourId); }, "tour removal");
+});
+var assignBtn = document.querySelector('[data-action="assignTour"]');
+if(assignBtn) assignBtn.addEventListener("click", function(){
+var tourId = assignBtn.getAttribute("data-tour");
+var guardSel = document.getElementById("tourAssignGuard");
+var dateEl = document.getElementById("tourAssignDate");
+if(!guardSel || !guardSel.value){ toast("No guard selected."); return; }
+var cs = guardSel.value; var date = (dateEl && dateEl.value) || todayDateStr();
+var already = (STATE.tourAssignments||[]).some(function(a){return a.tourId===tourId && a.guardCallsign===cs && a.shiftDate===date;});
+if(already){ toast(cs+" is already assigned to this tour for "+date+"."); return; }
+var a = {id:uid("asg"), tourId:tourId, guardCallsign:cs, shiftDate:date, assignedBy:session.callsign, assignedAt:nowIso()};
+STATE.tourAssignments = STATE.tourAssignments||[];
+STATE.tourAssignments.push(a);
+var t = STATE.patrolTours.find(function(x){return x.id===tourId;});
+logActivity("TOUR", session.callsign, "Assigned "+cs+" to patrol tour "+(t?t.name:"")+" for "+date);
+persist(function(){ return DB.tours.assign(a); }, "tour assignment for "+cs);
+});
+document.querySelectorAll('[data-action="unassignTour"]').forEach(function(b){
+b.addEventListener("click", function(){
+var id = b.getAttribute("data-assignment");
+STATE.tourAssignments = (STATE.tourAssignments||[]).filter(function(x){return x.id!==id;});
+logActivity("TOUR", session.callsign, "Removed a patrol tour assignment");
+persist(function(){ return DB.tours.unassign(id); }, "tour assignment removal");
+});
+});
+}
