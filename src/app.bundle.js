@@ -2168,10 +2168,6 @@ function wireMap(){
   else { map.setView(DEFAULT_MAP_CENTER, 10); }
   map.on("moveend", function(){ _liveMapView = {center: map.getCenter(), zoom: map.getZoom()}; });
 }
-document.addEventListener("DOMContentLoaded", init);
-})();
-
-
 /* ---------------- PATROL TOURS ----------------
 A site (post) can have any number of patrol tours -- ordered routes of scan points. A
 supervisor builds a tour live: create it, then stand at each stop and tap "Add point here"
@@ -2401,3 +2397,7 @@ persist(function(){ return DB.tours.unassign(id); }, "tour assignment removal");
 });
 });
 }
+document.addEventListener("DOMContentLoaded", init);
+})();
+
+
