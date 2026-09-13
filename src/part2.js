@@ -500,16 +500,237 @@ function wireChat(){
   if(input) input.addEventListener("keydown", function(e){ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); doSend(); } });
 }
 
-/* ---------------- RADIO PTT (stub) ---------------- */
+/* ---------------- RADIO PTT ----------------
+Live push-to-talk: real audio, peer-to-peer WebRTC (mesh -- every participant connects to
+every other participant directly), signalled over a Supabase Realtime channel per chat
+channel ("radio:"+channelId, reusing STATE.chat.channels so Radio PTT and Patrol Chat share
+the same channel list). broadcast carries offer/answer/ICE; presence tracks who is on the
+channel right now. Nothing about a PTT session is ever written to Postgres -- there is no
+recording and no channel history, same as a real analog radio. Only a public STUN server is
+used (no TURN/relay), so a connection between two guards on very restrictive/symmetric NATs
+or a locked-down corporate firewall may fail silently for that pair -- everyone else on the
+channel is unaffected. */
+var radioChannel = null; // current Supabase Realtime channel object, or null if not joined
+var radioChannelKey = null; // which chat-channel id radioChannel is joined to
+var radioLocalStream = null; // this guard's mic MediaStream -- requested once, kept muted via track.enabled
+var radioPeers = {}; // callsign -> RTCPeerConnection
+var radioTalkers = {}; // callsign -> true while that peer is transmitting
+var radioTalking = false; // am I holding Talk right now
+var radioJoining = false; // guards against double-join while a channel switch is in flight
+var RADIO_ICE_SERVERS = [{urls:"stun:stun.l.google.com:19302"}];
+
+/* A hidden sink appended directly to document.body (NOT inside #view) so remote guards'
+<audio> elements survive render()'s full #view innerHTML replacement, which happens on
+every state change including ones from other guards roughly every 700ms-debounced realtime
+refresh. Audio playback living inside #view would cut out constantly. */
+function radioAudioSink(){
+  var el = document.getElementById("radioAudioSink");
+  if(!el){
+    el = document.createElement("div");
+    el.id = "radioAudioSink";
+    el.style.display = "none";
+    document.body.appendChild(el);
+  }
+  return el;
+}
+function radioSetPeerAudio(callsign, stream){
+  var id = "radioAudio-"+callsign;
+  var audio = document.getElementById(id);
+  if(!audio){
+    audio = document.createElement("audio");
+    audio.id = id;
+    audio.autoplay = true;
+    radioAudioSink().appendChild(audio);
+  }
+  audio.srcObject = stream;
+}
+function radioRemovePeerAudio(callsign){
+  var audio = document.getElementById("radioAudio-"+callsign);
+  if(audio && audio.parentNode) audio.parentNode.removeChild(audio);
+}
+
+function radioSend(payload){
+  if(!radioChannel) return;
+  radioChannel.send({type:"broadcast", event:"signal", payload:payload});
+}
+
+function radioClosePeer(callsign){
+  var pc = radioPeers[callsign];
+  if(pc){ try{ pc.close(); }catch(e){} delete radioPeers[callsign]; }
+  delete radioTalkers[callsign];
+  radioRemovePeerAudio(callsign);
+}
+
+function radioEnsurePeer(callsign){
+  var pc = radioPeers[callsign];
+  if(pc) return pc;
+  pc = new RTCPeerConnection({iceServers: RADIO_ICE_SERVERS});
+  radioPeers[callsign] = pc;
+  if(radioLocalStream){
+    radioLocalStream.getTracks().forEach(function(t){ pc.addTrack(t, radioLocalStream); });
+  }
+  pc.onicecandidate = function(e){
+    if(e.candidate) radioSend({kind:"ice", to:callsign, from:session.callsign, candidate:e.candidate});
+  };
+  pc.ontrack = function(e){ radioSetPeerAudio(callsign, e.streams[0]); };
+  return pc;
+}
+
+async function radioMakeOffer(callsign){
+  var pc = radioEnsurePeer(callsign);
+  var offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  radioSend({kind:"offer", to:callsign, from:session.callsign, sdp:offer});
+}
+
+async function radioHandleSignal(msg){
+  if(!msg || msg.to !== session.callsign || msg.from === session.callsign) return;
+  var from = msg.from;
+  try{
+    if(msg.kind === "offer"){
+      var pc = radioEnsurePeer(from);
+      await pc.setRemoteDescription(msg.sdp);
+      var answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      radioSend({kind:"answer", to:from, from:session.callsign, sdp:answer});
+    } else if(msg.kind === "answer"){
+      var pc2 = radioPeers[from];
+      if(pc2) await pc2.setRemoteDescription(msg.sdp);
+    } else if(msg.kind === "ice"){
+      var pc3 = radioPeers[from];
+      if(pc3){ try{ await pc3.addIceCandidate(msg.candidate); }catch(e){ console.warn("radio ICE candidate failed", e); } }
+    }
+  }catch(e){ console.warn("radio signal error", e); }
+}
+
+function radioPresenceKeys(){
+  if(!radioChannel) return [];
+  try{ return Object.keys(radioChannel.presenceState()); }catch(e){ return []; }
+}
+
+/* Runs on every presence sync. Exactly one side of each pair initiates the offer -- whichever
+callsign sorts first alphabetically -- so two guards never both send offers to each other and
+collide, with no central coordinator needed. */
+function radioSyncPeersToPresence(){
+  var present = radioPresenceKeys().filter(function(cs){ return cs !== session.callsign; });
+  present.forEach(function(cs){
+    if(!radioPeers[cs] && session.callsign < cs) radioMakeOffer(cs);
+  });
+  Object.keys(radioPeers).forEach(function(cs){
+    if(present.indexOf(cs) === -1) radioClosePeer(cs);
+  });
+  render();
+}
+
+function radioJoinChannel(channelId){
+  if(radioChannelKey === channelId && radioChannel) return Promise.resolve();
+  return radioLeaveChannel().then(function(){
+    radioJoining = true;
+    return new Promise(function(resolve){
+      var ch = DB.radio.channel("radio:"+channelId, {config:{broadcast:{self:false}, presence:{key:session.callsign}}});
+      ch.on("broadcast", {event:"signal"}, function(msg){ radioHandleSignal(msg.payload); });
+      ch.on("broadcast", {event:"talk"}, function(msg){
+        var p = msg.payload;
+        if(p && p.callsign !== session.callsign){ radioTalkers[p.callsign] = !!p.talking; render(); }
+      });
+      ch.on("presence", {event:"sync"}, function(){ radioSyncPeersToPresence(); });
+      ch.on("presence", {event:"leave"}, function(payload){
+        (payload.leftPresences||[]).forEach(function(p){
+          var cs = (p && (p.callsign || p.key)) || "";
+          if(cs) radioClosePeer(cs);
+        });
+      });
+      ch.subscribe(function(status){
+        if(status === "SUBSCRIBED"){
+          ch.track({callsign:session.callsign, name:session.name});
+          radioChannel = ch;
+          radioChannelKey = channelId;
+          radioJoining = false;
+          render();
+          resolve();
+        }
+      });
+    });
+  });
+}
+
+function radioLeaveChannel(){
+  Object.keys(radioPeers).forEach(function(cs){ radioClosePeer(cs); });
+  if(!radioChannel) return Promise.resolve();
+  var ch = radioChannel;
+  radioChannel = null;
+  radioChannelKey = null;
+  return Promise.resolve(ch.unsubscribe()).catch(function(){});
+}
+
+/* Mic is requested once, the first time a guard presses Talk, then kept forever (muted via
+track.enabled) so every later press is instant with no repeat permission prompt. Torn down
+completely by teardownRadio() when leaving the Radio tab or signing out. */
+async function radioStartTalk(){
+  if(radioTalking || !radioChannel) return;
+  if(!radioLocalStream){
+    try{ radioLocalStream = await navigator.mediaDevices.getUserMedia({audio:true}); }
+    catch(e){ toast("Microphone access is required for Radio PTT."); return; }
+    radioLocalStream.getAudioTracks().forEach(function(t){ t.enabled = false; });
+    Object.keys(radioPeers).forEach(function(cs){
+      var pc = radioPeers[cs];
+      radioLocalStream.getTracks().forEach(function(t){ pc.addTrack(t, radioLocalStream); });
+    });
+  }
+  radioLocalStream.getAudioTracks().forEach(function(t){ t.enabled = true; });
+  radioTalking = true;
+  radioChannel.send({type:"broadcast", event:"talk", payload:{callsign:session.callsign, talking:true}});
+  render();
+}
+function radioStopTalk(){
+  if(!radioTalking) return;
+  if(radioLocalStream) radioLocalStream.getAudioTracks().forEach(function(t){ t.enabled = false; });
+  radioTalking = false;
+  if(radioChannel) radioChannel.send({type:"broadcast", event:"talk", payload:{callsign:session.callsign, talking:false}});
+  render();
+}
+
+/* Called from app.js when navigating away from the radio route (hashchange) and on sign-out,
+so a guard who leaves the tab or signs out never keeps a mic hot or a peer connection open. */
+function teardownRadio(){
+  radioStopTalk();
+  radioLeaveChannel();
+  if(radioLocalStream){
+    radioLocalStream.getTracks().forEach(function(t){ t.stop(); });
+    radioLocalStream = null;
+  }
+}
+
 function renderRadio(){
-  return '<div class="card"><div class="section-head"><h2>Radio PTT</h2></div>'+
-    '<div class="empty-state" style="padding:60px 20px;">'+
-    '<div style="font-size:28px;margin-bottom:10px;">▶</div>'+
-    '<div style="font-weight:600;color:hsl(var(--foreground));margin-bottom:6px;">Live push-to-talk isn\'t part of this migrated build yet</div>'+
-    'The original Radio PTT was real-time app-to-app voice (WebRTC), which needs a signalling/media server — something a static console page can\'t provide on its own.<br>'+
-    'Nothing was lost in the move: there was no recorded traffic and nobody was on air when this was migrated.<br><br>'+
-    'Use <b>Patrol Chat</b> for now — BOLOs and urgent traffic there post to the activity log immediately.'+
+  var channels = (STATE.chat && STATE.chat.channels) || [];
+  var current = radioChannelKey;
+  var onAir = Object.keys(radioTalkers).filter(function(cs){ return radioTalkers[cs]; });
+  var roster = radioPresenceKeys().filter(function(cs){ return cs !== session.callsign; });
+  var chOptions = channels.map(function(c){
+    return '<option value="'+escapeHtml(c.id)+'"'+(c.id===current?' selected':'')+'>#'+escapeHtml(c.name)+'</option>';
+  }).join("");
+  return '<div class="card"><div class="section-head"><h2>Radio PTT</h2><span class="meta">'+(current?(roster.length+1)+' on channel':'not joined')+'</span></div>'+
+    '<div style="padding:4px 0 16px;">'+
+    '<label class="field"><span class="lbl">Channel</span><select id="radioChanSel"><option value="">Select a channel…</option>'+chOptions+'</select></label>'+
+    (current ? ('<div class="small-muted" style="margin:8px 0 16px;">On air: '+(onAir.length?escapeHtml(onAir.join(", ")):"nobody right now")+'</div>') : '<div class="small-muted" style="margin:8px 0 16px;">Join a channel to start talking.</div>')+
+    '<button id="radioTalkBtn" class="btn primary" style="width:100%;padding:22px;font-size:16px;font-weight:700;'+(radioTalking?'background:hsl(var(--destructive));border-color:hsl(var(--destructive));':'')+'" '+(current?"":"disabled")+'>'+(radioTalking?"● TALKING — release to stop":"HOLD TO TALK")+'</button>'+
+    '<div class="small-muted" style="margin-top:10px;">Live voice only, nothing is ever recorded or saved. The first press on a channel will ask for microphone access. Works best with a handful of guards on the same channel at once.</div>'+
     '</div></div>';
+}
+
+function wireRadio(){
+  var sel = document.getElementById("radioChanSel");
+  if(sel) sel.addEventListener("change", function(){
+    var v = sel.value;
+    if(v) radioJoinChannel(v); else radioLeaveChannel().then(render);
+  });
+  var btn = document.getElementById("radioTalkBtn");
+  if(!btn) return;
+  btn.addEventListener("mousedown", function(e){ e.preventDefault(); radioStartTalk(); });
+  btn.addEventListener("touchstart", function(e){ e.preventDefault(); radioStartTalk(); });
+  ["mouseup","mouseleave","touchend","touchcancel"].forEach(function(evt){
+    btn.addEventListener(evt, function(){ radioStopTalk(); });
+  });
 }
 
 /* ---------------- TRUCK LOG ---------------- */
