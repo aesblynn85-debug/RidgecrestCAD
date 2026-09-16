@@ -1409,8 +1409,8 @@ function renderParking(){
   var openCount = STATE.parkingViolations.filter(function(v){return visibleToMe(v.post) && v.status!=="CLOSED";}).length;
   var today = new Date().toISOString().slice(0,10);
   var todayCount = STATE.parkingViolations.filter(function(v){return visibleToMe(v.post) && (v.occurred||"").slice(0,10)===today;}).length;
-  var html = '<div class="section-head"><h2>Parking Lot Violations</h2><span class="meta">'+openCount+' open · '+todayCount+' today</span>'+
-    '<button class="btn sm" data-action="parkingCsv">⭳ CSV</button></div>';
+  var scopeId = mapScopePostId(); var exportList = list.filter(function(v){ return !scopeId || (v.post||"").indexOf(scopeId)===0; }); var html = '<div class="section-head"><h2>Parking Lot Violations</h2><span class="meta">'+openCount+' open · '+todayCount+' today</span>'+
+    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="small-muted">Export:</span><select id="parkCsvPick" title="Export a single violation"><option value="">All (use date filter)</option>'+exportList.map(function(v){var tl=(C.VIOLATION_TYPES.find(function(t){return t[0]===v.vtype;})||["",v.vtype])[1]; return '<option value="'+v.id+'">'+escapeHtml(v.id+" — "+(tl||""))+'</option>';}).join("")+'</select><input type="date" id="parkCsvFrom" title="From date"><input type="date" id="parkCsvTo" title="To date"><button class="btn sm" data-action="parkingCsv">⭳ CSV</button></div></div>';
   html += '<div class="two-col">';
   html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">New Violation</div><form id="parkForm">'+
     '<label class="field"><span class="lbl">Violation Type <span class="req">*</span></span><select name="vtype" required><option value="">Select type…</option>'+
@@ -1571,12 +1571,12 @@ var cbtn = document.querySelector('[data-action="closeParkModal"]');
     persist(function(){ return DB.parking.update(v.id, {status:"RETURNED", reviewed_at:v.reviewedAt, reviewed_by:v.reviewedBy, supervisor_notes:v.supervisorNotes}); }, "violation "+v.id+" return");
   });
   var csvBtn = document.querySelector('[data-action="parkingCsv"]');
-  if(csvBtn) csvBtn.addEventListener("click", function(){ downloadCsv("parking_violations.csv", parkingToCsv()); });
+  if(csvBtn) csvBtn.addEventListener("click", function(){ var pickEl=document.getElementById("parkCsvPick"), fromEl=document.getElementById("parkCsvFrom"), toEl=document.getElementById("parkCsvTo"); downloadCsv("parking_violations.csv", parkingToCsv(pickEl?pickEl.value:"", fromEl?fromEl.value:"", toEl?toEl.value:"")); });
 }
 
-function parkingToCsv(){
+function parkingToCsv(pickId, fromDate, toDate){ var scopeId = mapScopePostId(); function pvOk(v){ if(!visibleToMe(v.post)) return false; if(scopeId && (v.post||"").indexOf(scopeId)!==0) return false; if(pickId) return v.id===pickId; if(fromDate && v.occurred && v.occurred.slice(0,10) < fromDate) return false; if(toDate && v.occurred && v.occurred.slice(0,10) > toDate) return false; return true; }
   var rows = [["ID","Type","Status","Occurred","Post","Linked Report","Plate","State","Vehicle","Driver","Action Taken","Written By","Narrative"]];
-  STATE.parkingViolations.forEach(function(v){
+  STATE.parkingViolations.filter(pvOk).forEach(function(v){
     var typeLabel = (window.__CAD.VIOLATION_TYPES.find(function(t){return t[0]===v.vtype;})||["",v.vtype])[1];
     rows.push([v.id, typeLabel, v.status, v.occurred, v.post, v.reportId||"", v.plate, v.plateState, v.vehicleDesc, v.driver, v.actionTaken, v.writtenBy, v.narrative]);
   });
@@ -1590,19 +1590,19 @@ function downloadCsv(filename, rows){
   setTimeout(function(){URL.revokeObjectURL(url);}, 2000);
 }
 
-/* ---------------- FIELD REPORTS ---------------- */
+function reportsToCsv(pickId, fromDate, toDate){ var scopeId = mapScopePostId(); function rvOk(r){ if(!visibleToMe(r.post)) return false; if(scopeId && (r.post||"").indexOf(scopeId)!==0) return false; if(pickId) return r.id===pickId; if(fromDate && r.occurred && r.occurred.slice(0,10) < fromDate) return false; if(toDate && r.occurred && r.occurred.slice(0,10) > toDate) return false; return true; } var rows=[["ID","Type","Status","Occurred","Subject","WrittenBy","Post","Narrative"]]; STATE.reports.filter(rvOk).forEach(function(r){ rows.push([r.id,r.typeLabel,r.status,r.occurred,r.subject,r.writtenBy,r.post,r.narrative]); }); return rows; } /* ---------------- FIELD REPORTS ---------------- */
 function renderReports(){
   var C = window.__CAD;
   var tab = uiState.reportsTab || "incident";
-  var myReports = STATE.reports.filter(function(r){return visibleToMe(r.post);});
-  var html = '<div class="section-head"><h2>Field Reports</h2><span class="meta">'+myReports.length+' reports</span>'+
-    '<button class="btn sm" data-action="reportsCsv">⭳ Reports CSV</button></div>';
+  var myReports = STATE.reports.filter(function(r){return visibleToMe(r.post);}); var rs = uiState.reportsSearch || {}; var searched = myReports.filter(function(r){ if(rs.site && (r.post||"").indexOf(rs.site)!==0) return false; if(rs.type && r.type!==rs.type) return false; if(rs.from && r.occurred && r.occurred.slice(0,10) < rs.from) return false; if(rs.to && r.occurred && r.occurred.slice(0,10) > rs.to) return false; return true; }); var repScopeId = mapScopePostId(); var repExportList = searched.filter(function(r){ return !repScopeId || (r.post||"").indexOf(repScopeId)===0; });
+  var html = '<div class="section-head"><h2>Field Reports</h2><span class="meta">'+searched.length+' reports</span>'+
+    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="small-muted">Export:</span><select id="repCsvPick" title="Export a single report"><option value="">All (use date filter)</option>'+repExportList.map(function(r){ return '<option value="'+r.id+'">'+escapeHtml(r.id+" — "+(r.subject||""))+'</option>'; }).join("")+'</select><input type="date" id="repCsvFrom" title="From date"><input type="date" id="repCsvTo" title="To date"><button class="btn sm" data-action="reportsCsv">⭳ Reports CSV</button></div></div>';
   html += '<div class="tabs">'+
     '<button class="'+(tab==="incident"?"active":"")+'" data-reptab="incident">Incident Reports '+myReports.length+'</button>'+
     '<button class="'+(tab==="police"?"active":"")+'" data-reptab="police">Police On Property '+STATE.policeOnProperty.filter(function(p){return !p.departedAt && visibleToMe(p.post);}).length+' now</button>'+
     '<button class="'+(tab==="self"?"active":"")+'" data-reptab="self">Self-Initiated Call</button>'+
     '</div>';
-  if(tab==="police"){ html += renderPoliceOnProperty(); return html; }
+  if(tab==="incident" && session.role==="SUPV"){ html += '<div class="card" style="margin-bottom:14px;"><div style="font-weight:700;margin-bottom:10px;">Search Reports</div><div class="grid2"><label class="field"><span class="lbl">Site</span><select id="repSearchSite"><option value="">All sites</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+(rs.site===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label><label class="field"><span class="lbl">Incident Type</span><select id="repSearchType"><option value="">All types</option>'+C.REPORT_TYPES.map(function(t){return '<option value="'+t[0]+'" '+(rs.type===t[0]?"selected":"")+'>'+escapeHtml(t[1])+'</option>';}).join("")+'</select></label><label class="field"><span class="lbl">From date</span><input type="date" id="repSearchFrom" value="'+(rs.from||"")+'"></label><label class="field"><span class="lbl">To date</span><input type="date" id="repSearchTo" value="'+(rs.to||"")+'"></label></div><button class="btn sm" id="repSearchClear" type="button" style="margin-top:8px;">Clear search</button></div>'; } if(tab==="police"){ html += renderPoliceOnProperty(); return html; }
   if(tab==="self"){
     html += '<div class="empty-state">Nothing logged in this tab yet.</div>';
     return html;
@@ -1638,7 +1638,7 @@ html += '<div class="card"><div class="tabs">'+
   ["all","mine","awaiting","returned","approved"].map(function(f){return '<button class="'+((uiState.reportsFilter||"all")===f?"active":"")+'" data-repfilter="'+f+'">'+f[0].toUpperCase()+f.slice(1)+'</button>';}).join("")+
   '</div>';
   var filt = uiState.reportsFilter||"all";
-  var list = myReports.filter(function(r){
+  var list = searched.filter(function(r){
     if(filt==="mine") return r.writtenByCallsign===session.callsign;
     if(filt==="awaiting") return r.status==="SUBMITTED";
     if(filt==="returned") return r.status==="RETURNED";
@@ -1689,7 +1689,7 @@ function renderReportModal(r){
     '</div></div>';
 }
 
-function wireReports(){
+function wireReports(){ var repSearchSite=document.getElementById("repSearchSite"); if(repSearchSite) repSearchSite.addEventListener("change", function(){ uiState.reportsSearch=uiState.reportsSearch||{}; uiState.reportsSearch.site=repSearchSite.value; render(); }); var repSearchType=document.getElementById("repSearchType"); if(repSearchType) repSearchType.addEventListener("change", function(){ uiState.reportsSearch=uiState.reportsSearch||{}; uiState.reportsSearch.type=repSearchType.value; render(); }); var repSearchFrom=document.getElementById("repSearchFrom"); if(repSearchFrom) repSearchFrom.addEventListener("change", function(){ uiState.reportsSearch=uiState.reportsSearch||{}; uiState.reportsSearch.from=repSearchFrom.value; render(); }); var repSearchTo=document.getElementById("repSearchTo"); if(repSearchTo) repSearchTo.addEventListener("change", function(){ uiState.reportsSearch=uiState.reportsSearch||{}; uiState.reportsSearch.to=repSearchTo.value; render(); }); var repSearchClear=document.getElementById("repSearchClear"); if(repSearchClear) repSearchClear.addEventListener("click", function(){ uiState.reportsSearch={}; render(); });
   document.querySelectorAll("[data-reptab]").forEach(function(b){ b.addEventListener("click", function(){ uiState.reportsTab=b.getAttribute("data-reptab"); render(); }); });
   document.querySelectorAll("[data-repfilter]").forEach(function(b){ b.addEventListener("click", function(){ uiState.reportsFilter=b.getAttribute("data-repfilter"); render(); }); });
   var form = document.getElementById("reportForm");
@@ -1751,10 +1751,10 @@ var bd = document.querySelector("[data-close-report]");
     if(navigator.clipboard) navigator.clipboard.writeText(txt).then(function(){toast("Copied.");});
   });
   var csvBtn = document.querySelector('[data-action="reportsCsv"]');
-  if(csvBtn) csvBtn.addEventListener("click", function(){
-    var rows=[["ID","Type","Status","Occurred","Subject","WrittenBy","Post","Narrative"]];
-    STATE.reports.forEach(function(r){ rows.push([r.id,r.typeLabel,r.status,r.occurred,r.subject,r.writtenBy,r.post,r.narrative]); });
-    downloadCsv("field_reports.csv", rows);
+  if(csvBtn) csvBtn.addEventListener("click", function(){ var pickEl=document.getElementById("repCsvPick"), fromEl=document.getElementById("repCsvFrom"), toEl=document.getElementById("repCsvTo"); downloadCsv("field_reports.csv", reportsToCsv(pickEl?pickEl.value:"", fromEl?fromEl.value:"", toEl?toEl.value:""));
+    
+    
+    
   });
   wirePoliceOnProperty();
 }
