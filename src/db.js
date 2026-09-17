@@ -39,12 +39,12 @@ re-publishing the entire app state on every change. */
    function truckFromRow(r){
         return {id:r.id, company:r.company||"", driver:r.driver||"", trailer:r.trailer||"", tractor:r.tractor||"",
                     post:r.post||"", purpose:r.purpose||"", dock:r.dock||"", seal:r.seal||"", bol:r.bol||"", license:r.license||"",
-                    notes:r.notes||"", timeIn:r.time_in, timeOut:r.time_out};
+                    notes:r.notes||"", timeIn:r.time_in, timeOut:r.time_out, dockArrival:r.dock_arrival, dockDeparture:r.dock_departure};
    }
    function truckToRow(t){
         return {id:t.id, company:t.company||"", driver:t.driver||"", trailer:t.trailer||"", tractor:t.tractor||"",
                     post:t.post||"", purpose:t.purpose||"", dock:t.dock||"", seal:t.seal||"", bol:t.bol||"", license:t.license||"",
-                    notes:t.notes||"", time_in:t.timeIn, time_out:t.timeOut};
+                    notes:t.notes||"", time_in:t.timeIn, time_out:t.timeOut, dock_arrival:t.dockArrival||null, dock_departure:t.dockDeparture||null};
    }
 
  function reportFromRow(r){
@@ -318,7 +318,7 @@ re-publishing the entire app state on every change. */
       },
       trucks: {
              insert: function(t){ return insertRow("trucks", truckToRow(t)); },
-             checkOut: function(id, timeOut){ return updateRow("trucks","id",id,{time_out:timeOut}); }
+             checkOut: function(id, timeOut){ return updateRow("trucks","id",id,{time_out:timeOut}); }, update: function(id, patch){ return updateRow("trucks","id",id,patch); }
       },
       reports: {
              insert: function(r){ return insertRow("reports", reportToRow(r)); },
