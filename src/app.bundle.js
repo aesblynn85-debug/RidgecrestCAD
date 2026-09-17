@@ -899,7 +899,7 @@ function renderUnits(){
   var C = window.__CAD;
   var onDuty = STATE.units.filter(function(u){return (u.status!=="OFFDUTY"&&u.status!=="ENDSHIFT");}).length;
   var html = '<div class="card"><div class="section-head"><h2>Guard &amp; Unit Roster</h2><span class="meta">'+onDuty+' on duty / '+STATE.units.length+' total</span></div>'+
-    '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn sm primary" data-action="addUnit">+ Add unit</button></div>'+
+    (session.role==="SUPV" ? '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn sm primary" data-action="addUnit">+ Add unit</button></div>' : '')+
     '<div class="small-muted" style="margin-bottom:8px;">Assigned Sites is the pool of sites a guard can work — ctrl/cmd-click to select more than one. Post is the ONE site they are on for the current shift; it also auto-fills the Post/Site field when they self-initiate a call, report, parking violation, or truck log. Guards can set their own Post from the "My Site" picker in their sidebar.</div>'+
     '<table class="datatable"><thead><tr><th>Callsign</th><th>Guard</th><th>Type</th><th>Status</th><th>Since</th><th>Assigned Sites</th><th>Post (this shift)</th><th>Shift</th><th></th></tr></thead><tbody>'+
     STATE.units.map(function(u){
@@ -922,7 +922,7 @@ function renderUnits(){
         (u.post && !postOptions.some(function(p){return p.id===u.post;}) ? '<option value="'+escapeHtml(u.post)+'" selected>'+escapeHtml(u.post)+'</option>' : '')+
         '</select></td>'+
         '<td>'+escapeHtml(u.shift||"—")+'</td>'+
-        '<td><button class="btn sm ghost" data-remove-unit="'+escapeHtml(u.callsign)+'">Remove</button></td></tr>';
+        (session.role==="SUPV" ? '<td><button class="btn sm ghost" data-remove-unit="'+escapeHtml(u.callsign)+'">Remove</button></td>' : '<td></td>')+'</tr>';
     }).join("") + '</tbody></table></div>';
   return html;
 }
@@ -997,7 +997,7 @@ document.querySelectorAll("[data-remove-unit]").forEach(function(b){
 // was a read-only list with no way to add a new site to the directory).
 function renderSites(){
   var html = '<div class="card"><div class="section-head"><h2>Site Directory</h2><span class="meta">'+STATE.posts.length+' sites</span></div>'+
-    '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn sm primary" data-action="addSite">+ Add site</button></div>';
+    (session.role==="SUPV" ? '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn sm primary" data-action="addSite">+ Add site</button></div>' : '');
   if(!STATE.posts.length){
     html += '<div class="empty-state">No sites yet. Use "+ Add site" above to create the first one.</div>';
   } else {
@@ -1007,7 +1007,7 @@ function renderSites(){
         '<div class="top"><span><b>'+escapeHtml(p.id)+'</b> — '+escapeHtml(p.name)+'</span><span class="pill blue">'+escapeHtml(p.kind)+'</span></div>'+
         '<div class="meta">'+escapeHtml(p.org)+' · '+escapeHtml(p.address||"No address on file")+'</div>'+
         '<div class="small-muted" style="margin-top:4px;">'+tourCount+' active patrol tour'+(tourCount===1?"":"s")+' — see Patrol Tours</div>'+
-        '<div style="margin-top:8px;"><button class="btn sm ghost" data-remove-site="'+escapeHtml(p.id)+'">Remove site</button></div>'+
+        (session.role==="SUPV" ? '<div style="margin-top:8px;"><button class="btn sm ghost" data-remove-site="'+escapeHtml(p.id)+'">Remove site</button></div>' : '')+
         '</div>';
     }).join("");
   }
@@ -1350,7 +1350,7 @@ function renderTrucks(){
   var list = view==="onsite"?onSite:view==="departed"?departed:STATE.trucks.filter(function(t){return visibleToMe(t.post);});
   var html = '<div class="section-head"><h2>Truck Log — Gate Register</h2><span class="meta">'+onSite.length+' on site · '+STATE.trucks.filter(function(t){return visibleToMe(t.post) && t.timeIn && t.timeIn.slice(0,10)===new Date().toISOString().slice(0,10);}).length+' today</span></div>';
   html += '<div class="two-col">';
-  html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">'+(session.role==="CLIENT"?"Log Truck at Dock":"Gate Check-In")+'</div><form id="truckForm">'+
+  if(session.role!=="CLIENT"){ html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">Gate Check-In</div><form id="truckForm">'+
     '<label class="field"><span class="lbl">Trucking Company <span class="req">*</span></span><input type="text" name="company" required></label>'+
     '<label class="field"><span class="lbl">Driver Name <span class="req">*</span></span><input type="text" name="driver" required></label>'+
     '<div class="grid2"><label class="field"><span class="lbl">Trailer # <span class="req">*</span></span><input type="text" name="trailer" required></label>'+
@@ -1361,7 +1361,7 @@ function renderTrucks(){
     '<label class="field"><span class="lbl">BOL / PO #'+(session.role==="CLIENT"?' <span class="req">*</span>':'')+'</span><input type="text" name="bol"'+(session.role==="CLIENT"?' required':'')+'></label>'+
     '<label class="field"><span class="lbl">Driver License / CDL</span><input type="text" name="license"></label>'+
     '<label class="field"><span class="lbl">Notes</span><textarea name="notes" rows="2"></textarea></label>'+
-    '<button type="submit" class="btn primary" style="width:100%;">Check in — time in now</button></form></div>';
+    '<button type="submit" class="btn primary" style="width:100%;">Check in — time in now</button></form></div>'; } else { html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">Truck Actions</div><div class="small-muted">Trucks are checked in at the gate by security. Use the buttons in the truck list to assign a dock number, log arrival at Shipping/Receiving, and log departure.</div></div>'; }
 
 html += '<div class="card"><div class="tabs">'+["onsite","departed","all"].map(function(v){return '<button class="'+(view===v?"active":"")+'" data-truckview="'+v+'">'+(v==="onsite"?"On site ("+onSite.length+")":v==="departed"?"Departed":"All")+'</button>';}).join("")+'</div>';
   if(!list.length){ html += '<div class="empty-state">No trucks in this view.</div>'; }
@@ -1370,7 +1370,7 @@ html += '<div class="card"><div class="tabs">'+["onsite","departed","all"].map(f
       return '<div class="list-item"><div class="top"><span>'+escapeHtml(t.company)+' / '+escapeHtml(t.driver)+'</span><span class="pill '+(t.timeOut?"muted":"warn")+'">'+(t.timeOut?"DEPARTED":"ON SITE")+'</span></div>'+
         '<div class="meta">Trailer '+escapeHtml(t.trailer)+' · '+escapeHtml(t.post||"—")+' · '+escapeHtml(t.purpose||"")+'</div>'+
         '<div class="meta">Time In '+fmtShort(t.timeIn)+(t.timeOut?' · Time Out '+fmtShort(t.timeOut):'')+'</div>'+
-        (!t.timeOut? '<button class="btn sm" style="margin-top:6px;" data-truck-out="'+t.id+'">Check out</button>' : '<div class="small-muted">On site '+Math.round((new Date(t.timeOut)-new Date(t.timeIn))/60000)+'m</div>')+
+        '<div class="meta">Dock '+escapeHtml(t.dock||"—")+(t.dockArrival?' · Arrived dock '+fmtShort(t.dockArrival):'')+(t.dockDeparture?' · Departed dock '+fmtShort(t.dockDeparture):'')+'</div>'+(session.role==="CLIENT" ? (!t.timeOut ? ('<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;"><button class="btn sm" data-truck-dock="'+t.id+'">'+(t.dock?"Change dock #":"Assign dock #")+'</button>'+(!t.dockArrival?'<button class="btn sm primary" data-truck-arrive="'+t.id+'">Log arrived — Shipping/Receiving</button>':(!t.dockDeparture?'<button class="btn sm" data-truck-depart="'+t.id+'">Log departed — Shipping/Receiving</button>':'<span class="pill muted">Departed dock</span>'))+'</div>') : '') : (!t.timeOut? '<button class="btn sm" style="margin-top:6px;" data-truck-out="'+t.id+'">Check out</button>' : '<div class="small-muted">On site '+Math.round((new Date(t.timeOut)-new Date(t.timeIn))/60000)+'m</div>'))+
         '</div>';
     }).join("");
   }
@@ -1400,9 +1400,42 @@ function wireTrucks(){
       logActivity("TRUCK", session.callsign, "Truck OUT — "+t.company+" / driver "+t.driver+" / trailer "+t.trailer+" — on site "+mins+"m");
       persist(function(){ return DB.trucks.checkOut(t.id, t.timeOut); }, "truck "+t.company+" checkout");
     });
+  });
+  document.querySelectorAll("[data-truck-dock]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var t = STATE.trucks.find(function(x){return x.id===b.getAttribute("data-truck-dock");});
+      if(!t) return;
+      var val = prompt("Dock / door number for "+t.company+" ("+t.trailer+")", t.dock||"");
+      if(val===null) return;
+      val = val.trim();
+      var from = t.dock;
+      t.dock = val;
+      logActivity("TRUCK", session.callsign, "Dock set to "+(val||"none")+" for "+t.company+" / trailer "+t.trailer+(from?" (was "+from+")":""));
+      persist(function(){ return DB.trucks.update(t.id, {dock:t.dock}); }, "truck "+t.company+" dock");
     });
+  });
+  document.querySelectorAll("[data-truck-arrive]").forEach(function(b){
+    b.addEventListener("click", function(){
+      if(session.role!=="CLIENT") return;
+      var t = STATE.trucks.find(function(x){return x.id===b.getAttribute("data-truck-arrive");});
+      if(!t || t.dockArrival) return;
+      t.dockArrival = nowIso();
+      logActivity("TRUCK", session.callsign, "Truck arrived at Shipping/Receiving — "+t.company+" / driver "+t.driver+" / trailer "+t.trailer+(t.dock?" @ dock "+t.dock:""));
+      persist(function(){ return DB.trucks.update(t.id, {dock_arrival:t.dockArrival}); }, "truck "+t.company+" dock arrival");
+    });
+  });
+  document.querySelectorAll("[data-truck-depart]").forEach(function(b){
+    b.addEventListener("click", function(){
+      if(session.role!=="CLIENT") return;
+      var t = STATE.trucks.find(function(x){return x.id===b.getAttribute("data-truck-depart");});
+      if(!t || !t.dockArrival || t.dockDeparture) return;
+      t.dockDeparture = nowIso();
+      logActivity("TRUCK", session.callsign, "Truck departed Shipping/Receiving — "+t.company+" / driver "+t.driver+" / trailer "+t.trailer+(t.dock?" @ dock "+t.dock:""));
+      persist(function(){ return DB.trucks.update(t.id, {dock_departure:t.dockDeparture}); }, "truck "+t.company+" dock departure");
+    });
+  });
 }
-/* ---------------- PARKING LOT VIOLATIONS ---------------- */
+  /* ---------------- PARKING LOT VIOLATIONS ---------------- */
 function renderParking(){
   var C = window.__CAD;
   var list = STATE.parkingViolations.filter(function(v){return visibleToMe(v.post);}).sort(function(a,b){ return new Date(b.occurred)-new Date(a.occurred); });
