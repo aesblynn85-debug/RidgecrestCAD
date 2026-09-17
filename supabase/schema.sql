@@ -244,8 +244,11 @@ create table if not exists trucks (
     license text default '',
     notes text default '',
     time_in timestamptz not null default now(),
-    time_out timestamptz
+    time_out timestamptz, dock_arrival timestamptz, dock_departure timestamptz
   );
+-- Migration for a database that already ran an earlier version of the trucks table above (dock arrival/departure are set by CLIENT accounts from the Truck Log tab, separate from the gate time_in/time_out that GUARD/SUPV accounts set).
+alter table trucks add column if not exists dock_arrival timestamptz;
+alter table trucks add column if not exists dock_departure timestamptz;
 
 -- ---------- field reports ----------
 create table if not exists reports (
