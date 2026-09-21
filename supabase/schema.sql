@@ -519,3 +519,30 @@ begin
     end if;
   end loop;
 end $$;
+
+
+-- ---------- photo attachments (trespass / field reports and parking violations) ----------
+-- Guards and supervisors in the field can attach one or more photos of a vehicle or person
+-- from the New Violation / New Incident Report forms (src/part3.js). Files are uploaded to
+-- the "field-photos" Storage bucket below and the resulting public URLs are stored here.
+alter table reports add column if not exists photo_urls text[] not null default '{}';
+alter table parking_violations add column if not exists photo_urls text[] not null default '{}';
+
+-- Public bucket so an uploaded photo's URL can be opened directly (consistent with this
+-- project's existing "anon key + RLS" access model -- see the SECURITY NOTE at the top of
+-- this file). Tighten this the same way you'd tighten the rest of this app before treating
+-- it as hardened for the open internet.
+insert into storage.buckets (id, name, public)
+values ('field-photos', 'field-photos', true)
+on conflict (id) do nothing;
+
+drop policy if exists field_photos_anon_all on storage.objects;
+create policy field_photos_anon_all on storage.objects for all to anon, authenticated
+using (bucket_id = 'field-photos') with check (bucket_id = 'field-photos');
+
+-- ---------- S.C.I.C. (Security Critical Information Center) ----------
+-- No new tables: S.C.I.C. (src/part3.js renderScic/scicEntries) is a read-only combined view
+-- over parking_violations and trespass-type reports, scoped in the app to a guard's assigned
+-- site(s) (unit_sites) or a supervisor's assigned site (users.assigned_post_id) -- see
+-- scicVisible() in src/part3.js. It relies on the reports/parking_violations RLS policies
+-- (anon_all) already defined above -- no additional grants needed.
