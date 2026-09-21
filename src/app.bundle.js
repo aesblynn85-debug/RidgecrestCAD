@@ -13,7 +13,7 @@
    {id:"trucks", label:"Truck Log", ic:"▢"},
    {id:"parking", label:"Parking Lot Violations", ic:"⚠"},
    {id:"reports", label:"Field Reports", ic:"☷"},
-   {id:"guardnotes", label:"Guard Notes", ic:"✎"},
+   {id:"guardnotes", label:"Guard Notes", ic:"✎"},{id:"scic", label:"S.C.I.C.", ic:"◈"},
    {id:"log", label:"Activity Log", ic:"≡"},
    {id:"users", label:"Users", ic:"☺"},
    // Dispatch/Supervisor/Admin only — filtered out of the sidebar for guards in renderShell,
@@ -345,7 +345,7 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
      case "log": return renderLog();
      case "users": return renderUsers();
      case "map": return renderMap();
-     case "callhistory": return renderCallHistory();
+     case "callhistory": return renderCallHistory(); case "scic": return renderScic();
      default: return renderDispatch();
    }
  }
@@ -496,7 +496,7 @@ function wireGlobal(){
    if(route==="log") wireLog();
    if(route==="users") wireUsers();
    if(route==="map") wireMap();
-   if(route==="callhistory") wireCallHistory();
+   if(route==="callhistory") wireCallHistory(); if(route==="scic") wireScic();
  }
 
  /* app.js continues in part2.js / part3.js, appended below via the build step */
@@ -1462,7 +1462,7 @@ function renderParking(){
     '<label class="field"><span class="lbl">Location in Lot</span><input type="text" name="locationInLot" placeholder="Row C, spot 14, near Dock 4…"></label>'+
     '<div class="grid2"><label class="field"><span class="lbl">Vehicle Plate #</span><input type="text" name="plate"></label><label class="field"><span class="lbl">State</span><input type="text" name="plateState" maxlength="2" style="text-transform:uppercase;"></label></div>'+
     '<label class="field"><span class="lbl">Vehicle Description</span><input type="text" name="vehicleDesc" placeholder="Make / model / color"></label>'+
-    '<label class="field"><span class="lbl">Driver / Subject (if known)</span><input type="text" name="driver"></label>'+
+    '<label class="field"><span class="lbl">Driver / Subject (if known)</span><input type="text" name="driver"></label>'+'<label class="field"><span class="lbl">Photos</span><input type="file" name="photos" accept="image/*" capture="environment" multiple></label>'+
     '<label class="field"><span class="lbl">Narrative</span><textarea name="narrative" rows="3"></textarea></label>'+
     '<label class="field"><span class="lbl">Action Taken</span><select name="actionTaken">'+C.ACTION_TAKEN_OPTS.map(function(a){return '<option>'+a+'</option>';}).join("")+'</select></label>'+
     '<div class="small-muted" style="margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Notifications</div>'+
@@ -1535,7 +1535,7 @@ var C = window.__CAD;
     ([v.notifications.police?"Police":null, v.notifications.propMgmt?"Property Mgmt":null, v.notifications.tow?"Tow Co.":null].filter(Boolean).join(", ")||"None")+
     (v.whoElseNotified?" · "+escapeHtml(v.whoElseNotified):"")+
     '</div></div>'+
-    (v.supervisorNotes? '<div class="field-block"><div class="k">Supervisor Notes</div><div class="v">'+nl2br(v.supervisorNotes)+'</div></div>':'')+
+    (v.supervisorNotes? '<div class="field-block"><div class="k">Supervisor Notes</div><div class="v">'+nl2br(v.supervisorNotes)+'</div></div>':'')+(v.photoUrls && v.photoUrls.length? '<div class="field-block"><div class="k">Photos</div><div class="v" style="display:flex;gap:8px;flex-wrap:wrap;">'+v.photoUrls.map(function(u){return '<a href="'+escapeHtml(u)+'" target="_blank" rel="noopener"><img src="'+escapeHtml(u)+'" style="width:90px;height:90px;object-fit:cover;border-radius:6px;border:1px solid hsl(var(--border));"></a>';}).join("")+'</div></div>':'')+
     (canClose? '<div style="margin:14px 0;"><button class="btn sm ok" data-action="closeParkViolation" data-id="'+v.id+'">Mark closed</button></div>' : '')+
     (canReview? (
       '<div class="divider"></div><div style="font-weight:700;margin-bottom:8px;">Supervisor Review</div>'+
@@ -1561,13 +1561,20 @@ function wireParking(){
       driver: fd.get("driver")||"", narrative: fd.get("narrative")||"", actionTaken: fd.get("actionTaken")||"",
       notifications: {police: fd.get("notifyPolice")==="on", propMgmt: fd.get("notifyPropMgmt")==="on", tow: fd.get("notifyTow")==="on"},
       whoElseNotified: fd.get("whoElse")||"", status: status, writtenBy: session.name, writtenByCallsign: session.callsign, submittedAt: status==="DRAFT"?null:nowIso(),
-      reviewedAt:null, reviewedBy:null, supervisorNotes:""
+      reviewedAt:null, reviewedBy:null, supervisorNotes:"", photoUrls:[]
     };
     STATE.parkingViolations.unshift(v);
     var typeLabel = (window.__CAD.VIOLATION_TYPES.find(function(t){return t[0]===v.vtype;})||["",v.vtype])[1];
     logActivity("PARKING", session.callsign, (status==="DRAFT"?"Parking violation drafted ":"Parking violation submitted ")+id+" — "+typeLabel+(v.plate?" ("+v.plate+")":""));
     form.reset(); uiState.parkFilter="all";
     persist(function(){ return DB.parking.insert(v); }, "parking violation "+id);
+    var photoFiles = fd.getAll("photos").filter(function(f){ return f && f.size>0; });
+    if(photoFiles.length && DB.configured && DB.storage){
+      DB.storage.uploadPhotos("parking", id, photoFiles).then(function(urls){
+        v.photoUrls = urls;
+        persist(function(){ return DB.parking.update(id, {photo_urls:urls}); }, "photos for "+id);
+      }).catch(function(e){ toast("Photo upload failed for "+id+": "+(e.message||e)); });
+    }
   }
   if(form) form.addEventListener("submit", function(e){ e.preventDefault(); submitParking("SUBMITTED"); });
   var draftBtn = document.querySelector('[data-action="parkDraft"]');
@@ -1662,7 +1669,7 @@ function renderReports(){
     '<label class="chk-row"><input type="checkbox" name="ems"> EMS notified</label>'+
     '<label class="chk-row"><input type="checkbox" name="police"> Police notified</label>'+
     '<label class="field"><span class="lbl">Who else was notified</span><input type="text" name="whoElse"></label>'+
-    '<label class="chk-row"><input type="checkbox" name="force"> Force was used — physical contact, restraint or detention</label>'+
+    '<label class="chk-row"><input type="checkbox" name="force"> Force was used — physical contact, restraint or detention</label>'+'<label class="field"><span class="lbl">Photos</span><input type="file" name="photos" accept="image/*" capture="environment" multiple></label>'+
     '<div style="display:flex;gap:8px;margin-top:10px;"><button type="submit" class="btn primary" style="flex:1;">Submit for review</button><button type="button" class="btn" data-action="reportDraft">Save draft</button></div>'+
     '<div class="small-muted" style="margin-top:8px;">Your callsign and name are stamped on the report by the server. A submitted report locks until a supervisor approves it or returns it for corrections.</div>'+
     '</form></div>';
@@ -1712,7 +1719,7 @@ function renderReportModal(r){
     (r.involvedParties? '<div class="field-block"><div class="k">Involved Parties</div><div class="v">'+nl2br(r.involvedParties)+'</div></div>':'')+
     (r.witnesses? '<div class="field-block"><div class="k">Witnesses</div><div class="v">'+nl2br(r.witnesses)+'</div></div>':'')+
     (r.actionTaken? '<div class="field-block"><div class="k">Action Taken</div><div class="v">'+nl2br(r.actionTaken)+'</div></div>':'')+
-    (r.supervisorNotes? '<div class="field-block"><div class="k">Supervisor Notes</div><div class="v">'+nl2br(r.supervisorNotes)+'</div></div>':'')+
+    (r.supervisorNotes? '<div class="field-block"><div class="k">Supervisor Notes</div><div class="v">'+nl2br(r.supervisorNotes)+'</div></div>':'')+(r.photoUrls && r.photoUrls.length? '<div class="field-block"><div class="k">Photos</div><div class="v" style="display:flex;gap:8px;flex-wrap:wrap;">'+r.photoUrls.map(function(u){return '<a href="'+escapeHtml(u)+'" target="_blank" rel="noopener"><img src="'+escapeHtml(u)+'" style="width:90px;height:90px;object-fit:cover;border-radius:6px;border:1px solid hsl(var(--border));"></a>';}).join("")+'</div></div>':'')+
     '<div style="display:flex;gap:8px;margin:14px 0;"><button class="btn sm" data-action="copyReport" data-id="'+r.id+'">Copy text</button></div>'+
     (canReview? (
       '<div class="divider"></div><div style="font-weight:700;margin-bottom:8px;">Supervisor Review</div>'+
@@ -1744,12 +1751,19 @@ function wireReports(){ var repSearchSite=document.getElementById("repSearchSite
       notifications: {injury: fd.get("injury")==="on", ems: fd.get("ems")==="on", police: fd.get("police")==="on"},
       whoElseNotified: fd.get("whoElse")||"", forceUsed: fd.get("force")==="on",
       writtenBy: session.name, writtenByCallsign: session.callsign, submittedAt: status==="DRAFT"?null:nowIso(),
-      reviewedAt:null, reviewedBy:null, supervisorNotes:""
+      reviewedAt:null, reviewedBy:null, supervisorNotes:"", photoUrls:[]
     };
     STATE.reports.unshift(r);
     if(status!=="DRAFT") logActivity("REPORT", session.callsign, "REPORT SUBMITTED "+id+" — "+typeInfo[0]+": "+r.subject);
     form.reset();
     persist(function(){ return DB.reports.insert(r); }, "report "+id);
+    var photoFiles = fd.getAll("photos").filter(function(f){ return f && f.size>0; });
+    if(photoFiles.length && DB.configured && DB.storage){
+      DB.storage.uploadPhotos("reports", id, photoFiles).then(function(urls){
+        r.photoUrls = urls;
+        persist(function(){ return DB.reports.update(id, {photo_urls:urls}); }, "photos for "+id);
+      }).catch(function(e){ toast("Photo upload failed for "+id+": "+(e.message||e)); });
+    }
   }
   if(form) form.addEventListener("submit", function(e){ e.preventDefault(); submitReport("SUBMITTED"); });
   var draftBtn = document.querySelector('[data-action="reportDraft"]');
@@ -2455,7 +2469,88 @@ persist(function(){ return DB.tours.unassign(id); }, "tour assignment removal");
 });
 });
 }
-document.addEventListener("DOMContentLoaded", init);
+/* ---------------- S.C.I.C. — SECURITY CRITICAL INFORMATION CENTER ----------------
+Combines Trespass-type Field Reports and every Parking Lot Violation into one searchable
+log (by vehicle plate or person's name), for GUARD and SUPV accounts only (CLIENT accounts
+never see this nav item at all — see NAV filtering in app.js). Site scoping reuses the two
+mechanisms already used elsewhere in this file: visibleToMe() (a GUARD only sees sites they
+are assigned to via unit_sites; a CLIENT is excluded entirely) and mapScopePostId() (a SUPV
+account scoped to one site via the Users tab "Map access" control only sees that site here
+too — left unassigned, that account sees every site, same as the Live Map / CSV exports). */
+  function scicVisible(post){
+    if(!visibleToMe(post)) return false;
+    var scopeId = mapScopePostId();
+    if(scopeId && (post||"").indexOf(scopeId)!==0) return false;
+    return true;
+  }
+  function scicEntries(){
+    var out = [];
+    STATE.parkingViolations.filter(function(v){return scicVisible(v.post);}).forEach(function(v){
+      var typeLabel = (window.__CAD.VIOLATION_TYPES.find(function(t){return t[0]===v.vtype;})||["",v.vtype])[1];
+      out.push({source:"PARKING", id:v.id, occurred:v.occurred, post:v.post, plate:v.plate, plateState:v.plateState,
+                vehicleDesc:v.vehicleDesc, person:v.driver, summary:typeLabel, narrative:v.narrative, photoUrls:v.photoUrls||[],
+                openRoute:"parking", openField:"openParkId"});
+    });
+    STATE.reports.filter(function(r){return r.type==="trespass" && scicVisible(r.post);}).forEach(function(r){
+      out.push({source:"TRESPASS", id:r.id, occurred:r.occurred, post:r.post, plate:"", plateState:"", vehicleDesc:"",
+                person:r.involvedParties||r.subject, summary:r.subject, narrative:r.narrative, photoUrls:r.photoUrls||[],
+                openRoute:"reports", openField:"openReportId"});
+    });
+    out.sort(function(a,b){return new Date(b.occurred)-new Date(a.occurred);});
+    return out;
+  }
+  function renderScic(){
+    var q = uiState.scicSearch||{};
+    var entries = scicEntries();
+    var filtered = entries.filter(function(e){
+      if(q.plate){ if((e.plate||"").toLowerCase().indexOf(q.plate.toLowerCase())===-1) return false; }
+      if(q.name){ var hay=((e.person||"")+" "+(e.summary||"")+" "+(e.narrative||"")).toLowerCase(); if(hay.indexOf(q.name.toLowerCase())===-1) return false; }
+      return true;
+    });
+    var scopeId = mapScopePostId();
+    var html = '<div class="section-head"><h2>S.C.I.C. — Security Critical Information Center</h2><span class="meta">'+filtered.length+' of '+entries.length+' records · '+(scopeId?mapScopeLabel(scopeId):"all assigned sites")+'</span></div>';
+    html += '<div class="card" style="margin-bottom:16px;"><div style="font-weight:700;margin-bottom:10px;">Search</div><form id="scicSearchForm"><div class="two-col" style="gap:10px;">'+
+      '<label class="field"><span class="lbl">Vehicle License Plate #</span><input type="text" name="plate" placeholder="e.g. 7ABC123" value="'+escapeHtml(q.plate||"")+'"></label>'+
+      '<label class="field"><span class="lbl">Person\'s Name</span><input type="text" name="name" placeholder="Search name, subject or narrative…" value="'+escapeHtml(q.name||"")+'"></label>'+
+      '</div><div style="display:flex;gap:8px;"><button type="submit" class="btn sm primary">Search</button><button type="button" class="btn sm" id="scicSearchClear">Clear search</button></div></form></div>';
+    html += '<div class="small-muted" style="margin-bottom:10px;">Combines Trespass Reports and Parking Lot Violations. Restricted to guards and supervisors, scoped to the site(s) you are assigned to — never other sites.</div>';
+    if(!filtered.length){ html += '<div class="empty-state">No matching S.C.I.C. records.</div>'; }
+    else {
+      html += '<div class="card"><table class="datatable"><thead><tr><th>Date</th><th>Source</th><th>ID</th><th>Site</th><th>Plate</th><th>Person</th><th>Summary</th><th></th></tr></thead><tbody>'+
+        filtered.map(function(e){
+          return '<tr><td class="mono small-muted" style="white-space:nowrap;">'+fmtShort(e.occurred)+'</td>'+
+            '<td><span class="pill '+(e.source==="TRESPASS"?"warn":"muted")+'">'+e.source+'</span></td>'+
+            '<td class="mono">'+escapeHtml(e.id)+'</td>'+
+            '<td>'+escapeHtml(e.post||"—")+'</td>'+
+            '<td>'+escapeHtml(e.plate||"—")+(e.plateState?" "+escapeHtml(e.plateState):"")+'</td>'+
+            '<td>'+escapeHtml(e.person||"—")+'</td>'+
+            '<td>'+escapeHtml(e.summary||"—")+(e.photoUrls.length?' <span class="pill muted">📷 '+e.photoUrls.length+'</span>':'')+'</td>'+
+            '<td><button class="btn sm" data-scic-open="'+escapeHtml(e.id)+'" data-scic-route="'+e.openRoute+'" data-scic-field="'+e.openField+'">Open</button></td>'+
+            '</tr>';
+        }).join("")+'</tbody></table></div>';
+    }
+    return html;
+  }
+  function wireScic(){
+    var form = document.getElementById("scicSearchForm");
+    if(form) form.addEventListener("submit", function(e){
+      e.preventDefault();
+      var fd = new FormData(form);
+      uiState.scicSearch = {plate:(fd.get("plate")||"").trim(), name:(fd.get("name")||"").trim()};
+      render();
+    });
+    var clr = document.getElementById("scicSearchClear");
+    if(clr) clr.addEventListener("click", function(){ uiState.scicSearch={}; render(); });
+    document.querySelectorAll("[data-scic-open]").forEach(function(b){
+      b.addEventListener("click", function(){
+        var id=b.getAttribute("data-scic-open"), r=b.getAttribute("data-scic-route"), f=b.getAttribute("data-scic-field");
+        uiState[f]=id;
+        nav(r);
+      });
+    });
+  }
+  
+  document.addEventListener("DOMContentLoaded", init);
 })();
 
 
