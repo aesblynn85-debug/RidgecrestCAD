@@ -55,7 +55,7 @@ re-publishing the entire app state on every change. */
                   notifications:{injury:!!r.notify_injury, ems:!!r.notify_ems, police:!!r.notify_police},
                   whoElseNotified:r.who_else_notified||"", forceUsed:!!r.force_used, writtenBy:r.written_by||"",
                   writtenByCallsign:r.written_by_callsign||"", submittedAt:r.submitted_at, reviewedAt:r.reviewed_at,
-                  reviewedBy:r.reviewed_by, supervisorNotes:r.supervisor_notes||""};
+                  reviewedBy:r.reviewed_by, supervisorNotes:r.supervisor_notes||"", photoUrls:r.photo_urls||[]};
  }
    function reportToRow(r){
         return {id:r.id, type:r.type||"", type_label:r.typeLabel||"", status:r.status, attach_to_call:r.attachToCall||"",
@@ -65,7 +65,7 @@ re-publishing the entire app state on every change. */
                     notify_injury:!!(r.notifications&&r.notifications.injury), notify_ems:!!(r.notifications&&r.notifications.ems),
                     notify_police:!!(r.notifications&&r.notifications.police), who_else_notified:r.whoElseNotified||"",
                     force_used:!!r.forceUsed, written_by:r.writtenBy||"", written_by_callsign:r.writtenByCallsign||"",
-                    submitted_at:r.submittedAt, reviewed_at:r.reviewedAt, reviewed_by:r.reviewedBy, supervisor_notes:r.supervisorNotes||""};
+                    submitted_at:r.submittedAt, reviewed_at:r.reviewedAt, reviewed_by:r.reviewedBy, supervisor_notes:r.supervisorNotes||"", photo_urls:r.photoUrls||[]};
    }
 
  function pvFromRow(r){
@@ -75,7 +75,7 @@ re-publishing the entire app state on every change. */
                               notifications:{police:!!r.notify_police, propMgmt:!!r.notify_prop_mgmt, tow:!!r.notify_tow},
                               whoElseNotified:r.who_else_notified||"", status:r.status, writtenBy:r.written_by||"",
                               writtenByCallsign:r.written_by_callsign||"", submittedAt:r.submitted_at, reviewedAt:r.reviewed_at,
-                              reviewedBy:r.reviewed_by, supervisorNotes:r.supervisor_notes||""};
+                              reviewedBy:r.reviewed_by, supervisorNotes:r.supervisor_notes||"", photoUrls:r.photo_urls||[]};
  }
    function pvToRow(v){
         return {id:v.id, vtype:v.vtype||"", call_id:v.call||null, report_id:v.reportId||null, post:v.post||"", occurred:v.occurred,
@@ -84,7 +84,7 @@ re-publishing the entire app state on every change. */
                     notify_police:!!(v.notifications&&v.notifications.police), notify_prop_mgmt:!!(v.notifications&&v.notifications.propMgmt),
                     notify_tow:!!(v.notifications&&v.notifications.tow), who_else_notified:v.whoElseNotified||"", status:v.status,
                     written_by:v.writtenBy||"", written_by_callsign:v.writtenByCallsign||"", submitted_at:v.submittedAt,
-                    reviewed_at:v.reviewedAt, reviewed_by:v.reviewedBy, supervisor_notes:v.supervisorNotes||""};
+                    reviewed_at:v.reviewedAt, reviewed_by:v.reviewedBy, supervisor_notes:v.supervisorNotes||"", photo_urls:v.photoUrls||[]};
    }
    function activityFromRow(r){ return {at:r.at, type:r.type, actor:r.actor, text:r.text}; }
    function policeFromRow(r){
@@ -365,6 +365,25 @@ re-publishing the entire app state on every change. */
       radio: {
             channel: function(name, opts){ if(!sb) return null; return sb.channel(name, opts||{}); }
       },
+    /* Photo attachments for parking violations / field reports (trespass etc.) — uploaded to a
+    public Supabase Storage bucket named "field-photos" (see supabase/schema.sql). Returns the
+    public URL for each uploaded file so it can be stored in the record's photo_urls array. */
+    storage: {
+       uploadPhotos: async function(prefix, id, files){
+          must();
+          var urls = [];
+          for(var i=0;i<files.length;i++){
+             var f = files[i];
+             var safeName = (f.name||"photo").replace(/[^a-zA-Z0-9_.-]/g,"_");
+             var path = prefix+"/"+id+"/"+Date.now()+"-"+i+"-"+safeName;
+             var up = await sb.storage.from("field-photos").upload(path, f, {upsert:false});
+             if(up.error) throw up.error;
+             var pub = sb.storage.from("field-photos").getPublicUrl(path);
+             urls.push(pub.data.publicUrl);
+          }
+          return urls;
+       }
+    },
 
 /* Subscribe to live changes from other guards' sessions. onChange is called with the
       table name whenever a row changes; callers typically refetch that slice and re-render. */
