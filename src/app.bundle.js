@@ -13,7 +13,8 @@
    {id:"trucks", label:"Truck Log", ic:"▢"},
    {id:"parking", label:"Parking Lot Violations", ic:"⚠"},
    {id:"reports", label:"Field Reports", ic:"☷"},
-   {id:"guardnotes", label:"Guard Notes", ic:"✎"},{id:"scic", label:"S.C.I.C.", ic:"◈"},
+   {id:"guardnotes", label:"Guard Notes", ic:"✎"},
+   {id:"scic", label:"S.C.I.C.", ic:"◈"},
    {id:"log", label:"Activity Log", ic:"≡"},
    {id:"users", label:"Users", ic:"☺"},
    // Dispatch/Supervisor/Admin only — filtered out of the sidebar for guards in renderShell,
@@ -1435,7 +1436,8 @@ function wireTrucks(){
     });
   });
 }
-  /* ---------------- PARKING LOT VIOLATIONS ---------------- */
+
+/* ---------------- PARKING LOT VIOLATIONS ---------------- */
 function renderParking(){
   var C = window.__CAD;
   var list = STATE.parkingViolations.filter(function(v){return visibleToMe(v.post);}).sort(function(a,b){ return new Date(b.occurred)-new Date(a.occurred); });
@@ -1443,7 +1445,7 @@ function renderParking(){
   var today = new Date().toISOString().slice(0,10);
   var todayCount = STATE.parkingViolations.filter(function(v){return visibleToMe(v.post) && (v.occurred||"").slice(0,10)===today;}).length;
   var scopeId = mapScopePostId(); var exportList = list.filter(function(v){ return !scopeId || (v.post||"").indexOf(scopeId)===0; }); var html = '<div class="section-head"><h2>Parking Lot Violations</h2><span class="meta">'+openCount+' open · '+todayCount+' today</span>'+
-    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="small-muted">Export:</span><select id="parkCsvPick" title="Export a single violation"><option value="">All (use date filter)</option>'+exportList.map(function(v){var tl=(C.VIOLATION_TYPES.find(function(t){return t[0]===v.vtype;})||["",v.vtype])[1]; return '<option value="'+v.id+'">'+escapeHtml(v.id+" — "+(tl||""))+'</option>';}).join("")+'</select><input type="date" id="parkCsvFrom" title="From date"><input type="date" id="parkCsvTo" title="To date"><button class="btn sm" data-action="parkingCsv">⭳ CSV</button></div></div>';
+    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="small-muted">Export:</span><select id="parkCsvPick"><option value="">All (use filters below)</option>'+exportList.map(function(v){var tl=(C.VIOLATION_TYPES.find(function(t){return t[0]===v.vtype;})||["",v.vtype])[1];return '<option value="'+v.id+'">'+v.id+' — '+escapeHtml(tl)+'</option>';}).join("")+'</select><input type="date" id="parkCsvFrom" title="From date"><input type="date" id="parkCsvTo" title="To date"><button class="btn sm" data-action="parkingCsv">⭳ CSV</button></div></div>';
   html += '<div class="two-col">';
   html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">New Violation</div><form id="parkForm">'+
     '<label class="field"><span class="lbl">Violation Type <span class="req">*</span></span><select name="vtype" required><option value="">Select type…</option>'+
@@ -1611,7 +1613,7 @@ var cbtn = document.querySelector('[data-action="closeParkModal"]');
     persist(function(){ return DB.parking.update(v.id, {status:"RETURNED", reviewed_at:v.reviewedAt, reviewed_by:v.reviewedBy, supervisor_notes:v.supervisorNotes}); }, "violation "+v.id+" return");
   });
   var csvBtn = document.querySelector('[data-action="parkingCsv"]');
-  if(csvBtn) csvBtn.addEventListener("click", function(){ var pickEl=document.getElementById("parkCsvPick"), fromEl=document.getElementById("parkCsvFrom"), toEl=document.getElementById("parkCsvTo"); downloadCsv("parking_violations.csv", parkingToCsv(pickEl?pickEl.value:"", fromEl?fromEl.value:"", toEl?toEl.value:"")); });
+  if(csvBtn) csvBtn.addEventListener("click", function(){ var pickId=(document.getElementById("parkCsvPick")||{}).value||""; var fromDate=(document.getElementById("parkCsvFrom")||{}).value||""; var toDate=(document.getElementById("parkCsvTo")||{}).value||""; downloadCsv("parking_violations.csv", parkingToCsv(pickId, fromDate, toDate)); });
 }
 
 function parkingToCsv(pickId, fromDate, toDate){ var scopeId = mapScopePostId(); function pvOk(v){ if(!visibleToMe(v.post)) return false; if(scopeId && (v.post||"").indexOf(scopeId)!==0) return false; if(pickId) return v.id===pickId; if(fromDate && v.occurred && v.occurred.slice(0,10) < fromDate) return false; if(toDate && v.occurred && v.occurred.slice(0,10) > toDate) return false; return true; }
@@ -1636,13 +1638,13 @@ function renderReports(){
   var tab = uiState.reportsTab || "incident";
   var myReports = STATE.reports.filter(function(r){return visibleToMe(r.post);}); var rs = uiState.reportsSearch || {}; var searched = myReports.filter(function(r){ if(rs.site && (r.post||"").indexOf(rs.site)!==0) return false; if(rs.type && r.type!==rs.type) return false; if(rs.from && r.occurred && r.occurred.slice(0,10) < rs.from) return false; if(rs.to && r.occurred && r.occurred.slice(0,10) > rs.to) return false; return true; }); var repScopeId = mapScopePostId(); var repExportList = searched.filter(function(r){ return !repScopeId || (r.post||"").indexOf(repScopeId)===0; });
   var html = '<div class="section-head"><h2>Field Reports</h2><span class="meta">'+searched.length+' reports</span>'+
-    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="small-muted">Export:</span><select id="repCsvPick" title="Export a single report"><option value="">All (use date filter)</option>'+repExportList.map(function(r){ return '<option value="'+r.id+'">'+escapeHtml(r.id+" — "+(r.subject||""))+'</option>'; }).join("")+'</select><input type="date" id="repCsvFrom" title="From date"><input type="date" id="repCsvTo" title="To date"><button class="btn sm" data-action="reportsCsv">⭳ Reports CSV</button></div></div>';
+    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="small-muted">Export:</span><select id="repCsvPick"><option value="">All (use filters below)</option>'+repExportList.map(function(r){return '<option value="'+r.id+'">'+r.id+' — '+escapeHtml(r.subject||r.typeLabel||"")+'</option>';}).join("")+'</select><input type="date" id="repCsvFrom" title="From date"><input type="date" id="repCsvTo" title="To date"><button class="btn sm" data-action="reportsCsv">⭳ Reports CSV</button></div></div>';
   html += '<div class="tabs">'+
     '<button class="'+(tab==="incident"?"active":"")+'" data-reptab="incident">Incident Reports '+myReports.length+'</button>'+
     '<button class="'+(tab==="police"?"active":"")+'" data-reptab="police">Police On Property '+STATE.policeOnProperty.filter(function(p){return !p.departedAt && visibleToMe(p.post);}).length+' now</button>'+
     '<button class="'+(tab==="self"?"active":"")+'" data-reptab="self">Self-Initiated Call</button>'+
     '</div>';
-  if(tab==="incident" && session.role==="SUPV"){ html += '<div class="card" style="margin-bottom:14px;"><div style="font-weight:700;margin-bottom:10px;">Search Reports</div><div class="grid2"><label class="field"><span class="lbl">Site</span><select id="repSearchSite"><option value="">All sites</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+(rs.site===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label><label class="field"><span class="lbl">Incident Type</span><select id="repSearchType"><option value="">All types</option>'+C.REPORT_TYPES.map(function(t){return '<option value="'+t[0]+'" '+(rs.type===t[0]?"selected":"")+'>'+escapeHtml(t[1])+'</option>';}).join("")+'</select></label><label class="field"><span class="lbl">From date</span><input type="date" id="repSearchFrom" value="'+(rs.from||"")+'"></label><label class="field"><span class="lbl">To date</span><input type="date" id="repSearchTo" value="'+(rs.to||"")+'"></label></div><button class="btn sm" id="repSearchClear" type="button" style="margin-top:8px;">Clear search</button></div>'; } if(tab==="police"){ html += renderPoliceOnProperty(); return html; }
+  if(tab==="incident" && session.role==="SUPV"){ html += '<div class="card" style="margin-bottom:16px;"><div style="font-weight:700;margin-bottom:10px;">Search Reports</div><div class="two-col" style="gap:10px;"><label class="field"><span class="lbl">Site</span><select id="repSearchSite"><option value="">All sites</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+((uiState.reportsSearch||{}).site===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label><label class="field"><span class="lbl">Incident Type</span><select id="repSearchType"><option value="">All types</option>'+C.REPORT_TYPES.map(function(t){return '<option value="'+t[0]+'" '+((uiState.reportsSearch||{}).type===t[0]?"selected":"")+'>'+escapeHtml(t[1])+'</option>';}).join("")+'</select></label><label class="field"><span class="lbl">From</span><input type="date" id="repSearchFrom" value="'+((uiState.reportsSearch||{}).from||"")+'"></label><label class="field"><span class="lbl">To</span><input type="date" id="repSearchTo" value="'+((uiState.reportsSearch||{}).to||"")+'"></label></div><button class="btn sm" id="repSearchClear" type="button">Clear search</button></div>'; } if(tab==="police"){ html += renderPoliceOnProperty(); return html; }
   if(tab==="self"){
     html += '<div class="empty-state">Nothing logged in this tab yet.</div>';
     return html;
@@ -1729,7 +1731,7 @@ function renderReportModal(r){
     '</div></div>';
 }
 
-function wireReports(){ var repSearchSite=document.getElementById("repSearchSite"); if(repSearchSite) repSearchSite.addEventListener("change", function(){ uiState.reportsSearch=uiState.reportsSearch||{}; uiState.reportsSearch.site=repSearchSite.value; render(); }); var repSearchType=document.getElementById("repSearchType"); if(repSearchType) repSearchType.addEventListener("change", function(){ uiState.reportsSearch=uiState.reportsSearch||{}; uiState.reportsSearch.type=repSearchType.value; render(); }); var repSearchFrom=document.getElementById("repSearchFrom"); if(repSearchFrom) repSearchFrom.addEventListener("change", function(){ uiState.reportsSearch=uiState.reportsSearch||{}; uiState.reportsSearch.from=repSearchFrom.value; render(); }); var repSearchTo=document.getElementById("repSearchTo"); if(repSearchTo) repSearchTo.addEventListener("change", function(){ uiState.reportsSearch=uiState.reportsSearch||{}; uiState.reportsSearch.to=repSearchTo.value; render(); }); var repSearchClear=document.getElementById("repSearchClear"); if(repSearchClear) repSearchClear.addEventListener("click", function(){ uiState.reportsSearch={}; render(); });
+function wireReports(){ var rss=document.getElementById("repSearchSite"); if(rss) rss.addEventListener("change", function(){ uiState.reportsSearch=uiState.reportsSearch||{}; uiState.reportsSearch.site=rss.value; render(); }); var rst=document.getElementById("repSearchType"); if(rst) rst.addEventListener("change", function(){ uiState.reportsSearch=uiState.reportsSearch||{}; uiState.reportsSearch.type=rst.value; render(); }); var rsf=document.getElementById("repSearchFrom"); if(rsf) rsf.addEventListener("change", function(){ uiState.reportsSearch=uiState.reportsSearch||{}; uiState.reportsSearch.from=rsf.value; render(); }); var rst2=document.getElementById("repSearchTo"); if(rst2) rst2.addEventListener("change", function(){ uiState.reportsSearch=uiState.reportsSearch||{}; uiState.reportsSearch.to=rst2.value; render(); }); var rsc=document.getElementById("repSearchClear"); if(rsc) rsc.addEventListener("click", function(){ uiState.reportsSearch={}; render(); });
   document.querySelectorAll("[data-reptab]").forEach(function(b){ b.addEventListener("click", function(){ uiState.reportsTab=b.getAttribute("data-reptab"); render(); }); });
   document.querySelectorAll("[data-repfilter]").forEach(function(b){ b.addEventListener("click", function(){ uiState.reportsFilter=b.getAttribute("data-repfilter"); render(); }); });
   var form = document.getElementById("reportForm");
@@ -1745,7 +1747,7 @@ function wireReports(){ var repSearchSite=document.getElementById("repSearchSite
     var r = {
       id:id, type:typeInfo[0], typeLabel:typeInfo[1], status: status==="DRAFT"?"DRAFT":"SUBMITTED",
       attachToCall: fd.get("call")||"Standalone", post: postId?(postId+" "+(post?post.name:"")):"",
-      occurred: new Date(fd.get("occurred")).toISOString(), location: locText, subject: fd.get("subject"),
+      occurred: new Date(fd.get("occurred")).toISOString(), location: fd.get("location")||"", subject: fd.get("subject"),
       narrative: fd.get("narrative")||"", involvedParties: fd.get("involvedParties")||"", witnesses: fd.get("witnesses")||"",
       propertyDamage: fd.get("propertyDamage")||"", estLoss: fd.get("estLoss")||"", actionTaken: fd.get("actionTaken")||"",
       notifications: {injury: fd.get("injury")==="on", ems: fd.get("ems")==="on", police: fd.get("police")==="on"},
@@ -1798,7 +1800,7 @@ var bd = document.querySelector("[data-close-report]");
     if(navigator.clipboard) navigator.clipboard.writeText(txt).then(function(){toast("Copied.");});
   });
   var csvBtn = document.querySelector('[data-action="reportsCsv"]');
-  if(csvBtn) csvBtn.addEventListener("click", function(){ var pickEl=document.getElementById("repCsvPick"), fromEl=document.getElementById("repCsvFrom"), toEl=document.getElementById("repCsvTo"); downloadCsv("field_reports.csv", reportsToCsv(pickEl?pickEl.value:"", fromEl?fromEl.value:"", toEl?toEl.value:""));
+  if(csvBtn) csvBtn.addEventListener("click", function(){ var pickId=(document.getElementById("repCsvPick")||{}).value||""; var fromDate=(document.getElementById("repCsvFrom")||{}).value||""; var toDate=(document.getElementById("repCsvTo")||{}).value||""; downloadCsv("field_reports.csv", reportsToCsv(pickId, fromDate, toDate));
     
     
     
@@ -1971,7 +1973,7 @@ var calls = STATE.calls.length, cleared = STATE.calls.filter(function(c){return 
 }
 function wireLog(){
   var csvBtn = document.querySelector('[data-action="logCsv"]');
-  if(csvBtn) csvBtn.addEventListener("click", function(){
+  if(csvBtn) csvBtn.addEventListener("click", function(){ var pickId=(document.getElementById("repCsvPick")||{}).value||""; var fromDate=(document.getElementById("repCsvFrom")||{}).value||""; var toDate=(document.getElementById("repCsvTo")||{}).value||""; downloadCsv("field_reports.csv", reportsToCsv(pickId, fromDate, toDate));
     var rows=[["Time","Type","Actor","Detail"]];
     STATE.activityLog.forEach(function(l){ rows.push([l.at,l.type,l.actor,l.text]); });
     downloadCsv("activity_log.csv", rows);
@@ -2215,6 +2217,8 @@ function wireMap(){
   else { map.setView(DEFAULT_MAP_CENTER, 10); }
   map.on("moveend", function(){ _liveMapView = {center: map.getCenter(), zoom: map.getZoom()}; });
 }
+
+
 /* ---------------- PATROL TOURS ----------------
 A site (post) can have any number of patrol tours -- ordered routes of scan points. A
 supervisor builds a tour live: create it, then stand at each stop and tap "Add point here"
@@ -2469,6 +2473,8 @@ persist(function(){ return DB.tours.unassign(id); }, "tour assignment removal");
 });
 });
 }
+
+
 /* ---------------- S.C.I.C. — SECURITY CRITICAL INFORMATION CENTER ----------------
 Combines Trespass-type Field Reports and every Parking Lot Violation into one searchable
 log (by vehicle plate or person's name), for GUARD and SUPV accounts only (CLIENT accounts
@@ -2477,80 +2483,157 @@ mechanisms already used elsewhere in this file: visibleToMe() (a GUARD only sees
 are assigned to via unit_sites; a CLIENT is excluded entirely) and mapScopePostId() (a SUPV
 account scoped to one site via the Users tab "Map access" control only sees that site here
 too — left unassigned, that account sees every site, same as the Live Map / CSV exports). */
-  function scicVisible(post){
-    if(!visibleToMe(post)) return false;
-    var scopeId = mapScopePostId();
-    if(scopeId && (post||"").indexOf(scopeId)!==0) return false;
+function scicVisible(post){
+  if(!visibleToMe(post)) return false;
+  var scopeId = mapScopePostId();
+  if(scopeId && (post||"").indexOf(scopeId)!==0) return false;
+  return true;
+}
+function scicEntries(){
+  var out = [];
+  STATE.parkingViolations.filter(function(v){return scicVisible(v.post);}).forEach(function(v){
+    var typeLabel = (window.__CAD.VIOLATION_TYPES.find(function(t){return t[0]===v.vtype;})||["",v.vtype])[1];
+    out.push({source:"PARKING", id:v.id, occurred:v.occurred, post:v.post, plate:v.plate, plateState:v.plateState,
+              vehicleDesc:v.vehicleDesc, person:v.driver, summary:typeLabel, narrative:v.narrative, photoUrls:v.photoUrls||[],
+              openRoute:"parking", openField:"openParkId"});
+  });
+  STATE.reports.filter(function(r){return r.type==="trespass" && scicVisible(r.post);}).forEach(function(r){
+    out.push({source:"TRESPASS", id:r.id, occurred:r.occurred, post:r.post, plate:"", plateState:"", vehicleDesc:"",
+              person:r.involvedParties||r.subject, summary:r.subject, narrative:r.narrative, photoUrls:r.photoUrls||[],
+              openRoute:"reports", openField:"openReportId"});
+  });
+(STATE.scicManual||[]).filter(function(m){return scicVisible(m.post);}).forEach(function(m){
+  var snippet = (m.narrative||"").slice(0,80);
+  out.push({source:"MANUAL", id:m.id, occurred:m.createdAt, post:m.post, plate:m.plate, plateState:m.plateState,
+            vehicleDesc:m.vehicleDesc, person:m.personName, summary:snippet, narrative:m.narrative, photoUrls:m.photoUrls||[],
+            openRoute:"scic", openField:"openScicId"});
+});
+  out.sort(function(a,b){return new Date(b.occurred)-new Date(a.occurred);});
+  return out;
+}
+function renderScic(){
+  var q = uiState.scicSearch||{};
+  var entries = scicEntries();
+  var filtered = entries.filter(function(e){
+    if(q.plate){ if((e.plate||"").toLowerCase().indexOf(q.plate.toLowerCase())===-1) return false; }
+    if(q.name){ var hay=((e.person||"")+" "+(e.summary||"")+" "+(e.narrative||"")).toLowerCase(); if(hay.indexOf(q.name.toLowerCase())===-1) return false; }
     return true;
+  });
+  var scopeId = mapScopePostId();
+  var html = '<div class="section-head"><h2>S.C.I.C. — Security Critical Information Center</h2><span class="meta">'+filtered.length+' of '+entries.length+' records · '+(scopeId?mapScopeLabel(scopeId):"all assigned sites")+'</span></div>';
+  var scicScopePostId = mapScopePostId();
+  var scicNewEntryCard = "";
+  if(session.role==="SUPV"){
+    scicNewEntryCard = '<div class="card" style="margin-bottom:16px;"><div style="font-weight:700;margin-bottom:10px;">New Critical Info Entry</div><form id="scicEntryForm">'+
+      (scicScopePostId ?
+       ('<div class="field"><span class="lbl">Site</span><div class="v">'+escapeHtml(mapScopeLabel(scicScopePostId))+'</div><input type="hidden" name="post" value="'+escapeHtml(scicScopePostId)+'"></div>')
+       :
+       ('<label class="field"><span class="lbl">Site <span class="req">*</span></span><select name="post" required><option value="">Select site…</option>'+
+        STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+
+        '</select></label>')
+       )+
+      '<div class="grid2"><label class="field"><span class="lbl">Vehicle Plate #</span><input type="text" name="plate"></label><label class="field"><span class="lbl">State</span><input type="text" name="plateState" maxlength="2" style="text-transform:uppercase;"></label></div>'+
+      '<label class="field"><span class="lbl">Vehicle Description</span><input type="text" name="vehicleDesc" placeholder="Make / model / color"></label>'+
+      '<label class="field"><span class="lbl">Person\'s Name</span><input type="text" name="personName"></label>'+
+      '<label class="field"><span class="lbl">Critical Information <span class="req">*</span></span><textarea name="narrative" rows="3" required placeholder="Details to flag for guards at this site…"></textarea></label>'+
+      '<label class="field"><span class="lbl">Photos</span><input type="file" name="photos" accept="image/*" capture="environment" multiple></label>'+
+      '<button type="submit" class="btn primary" style="width:100%;margin-top:6px;">Add to S.C.I.C.</button>'+
+      '</form></div>';
   }
-  function scicEntries(){
-    var out = [];
-    STATE.parkingViolations.filter(function(v){return scicVisible(v.post);}).forEach(function(v){
-      var typeLabel = (window.__CAD.VIOLATION_TYPES.find(function(t){return t[0]===v.vtype;})||["",v.vtype])[1];
-      out.push({source:"PARKING", id:v.id, occurred:v.occurred, post:v.post, plate:v.plate, plateState:v.plateState,
-                vehicleDesc:v.vehicleDesc, person:v.driver, summary:typeLabel, narrative:v.narrative, photoUrls:v.photoUrls||[],
-                openRoute:"parking", openField:"openParkId"});
-    });
-    STATE.reports.filter(function(r){return r.type==="trespass" && scicVisible(r.post);}).forEach(function(r){
-      out.push({source:"TRESPASS", id:r.id, occurred:r.occurred, post:r.post, plate:"", plateState:"", vehicleDesc:"",
-                person:r.involvedParties||r.subject, summary:r.subject, narrative:r.narrative, photoUrls:r.photoUrls||[],
-                openRoute:"reports", openField:"openReportId"});
-    });
-    out.sort(function(a,b){return new Date(b.occurred)-new Date(a.occurred);});
-    return out;
+  html += scicNewEntryCard;
+  html += '<div class="card" style="margin-bottom:16px;"><div style="font-weight:700;margin-bottom:10px;">Search</div><form id="scicSearchForm"><div class="two-col" style="gap:10px;">'+
+    '<label class="field"><span class="lbl">Vehicle License Plate #</span><input type="text" name="plate" placeholder="e.g. 7ABC123" value="'+escapeHtml(q.plate||"")+'"></label>'+
+    '<label class="field"><span class="lbl">Person\'s Name</span><input type="text" name="name" placeholder="Search name, subject or narrative…" value="'+escapeHtml(q.name||"")+'"></label>'+
+    '</div><div style="display:flex;gap:8px;"><button type="submit" class="btn sm primary">Search</button><button type="button" class="btn sm" id="scicSearchClear">Clear search</button></div></form></div>';
+  html += '<div class="small-muted" style="margin-bottom:10px;">Combines Trespass Reports and Parking Lot Violations. Restricted to guards and supervisors, scoped to the site(s) you are assigned to — never other sites.</div>';
+  if(!filtered.length){ html += '<div class="empty-state">No matching S.C.I.C. records.</div>'; }
+  else {
+    html += '<div class="card"><table class="datatable"><thead><tr><th>Date</th><th>Source</th><th>ID</th><th>Site</th><th>Plate</th><th>Person</th><th>Summary</th><th></th></tr></thead><tbody>'+
+      filtered.map(function(e){
+        return '<tr><td class="mono small-muted" style="white-space:nowrap;">'+fmtShort(e.occurred)+'</td>'+
+          '<td><span class="pill '+(e.source==="TRESPASS"?"warn":"muted")+'">'+e.source+'</span></td>'+
+          '<td class="mono">'+escapeHtml(e.id)+'</td>'+
+          '<td>'+escapeHtml(e.post||"—")+'</td>'+
+          '<td>'+escapeHtml(e.plate||"—")+(e.plateState?" "+escapeHtml(e.plateState):"")+'</td>'+
+          '<td>'+escapeHtml(e.person||"—")+'</td>'+
+          '<td>'+escapeHtml(e.summary||"—")+(e.photoUrls.length?' <span class="pill muted">📷 '+e.photoUrls.length+'</span>':'')+'</td>'+
+          '<td><button class="btn sm" data-scic-open="'+escapeHtml(e.id)+'" data-scic-route="'+e.openRoute+'" data-scic-field="'+e.openField+'">Open</button></td>'+
+          '</tr>';
+      }).join("")+'</tbody></table></div>';
   }
-  function renderScic(){
-    var q = uiState.scicSearch||{};
-    var entries = scicEntries();
-    var filtered = entries.filter(function(e){
-      if(q.plate){ if((e.plate||"").toLowerCase().indexOf(q.plate.toLowerCase())===-1) return false; }
-      if(q.name){ var hay=((e.person||"")+" "+(e.summary||"")+" "+(e.narrative||"")).toLowerCase(); if(hay.indexOf(q.name.toLowerCase())===-1) return false; }
-      return true;
+if(uiState.openScicId){
+  var scicOpen = (STATE.scicManual||[]).find(function(m){return m.id===uiState.openScicId;});
+  if(scicOpen) html += renderScicModal(scicOpen);
+}
+  return html;
+}
+function renderScicModal(m){
+  return '<div class="modal-backdrop" data-close-scic="1"><div class="modal" onclick="event.stopPropagation()">'+
+    '<button class="close" data-action="closeScicModal">✕</button>'+
+    '<div class="rtaid">'+escapeHtml(m.id)+'</div> <span class="pill warn">MANUAL ENTRY</span>'+
+    '<h2>Critical Security Information</h2>'+
+    '<div class="kv-grid">'+
+    '<div><div class="k">Entered by</div><div class="v">'+escapeHtml(m.writtenBy||"")+'</div></div>'+
+    '<div><div class="k">Created</div><div class="v">'+fmtDT(m.createdAt)+'</div></div>'+
+    '<div><div class="k">Site</div><div class="v">'+escapeHtml(m.post||"—")+'</div></div>'+
+    '<div><div class="k">Plate</div><div class="v">'+escapeHtml(m.plate||"—")+' '+escapeHtml(m.plateState||"")+'</div></div>'+
+    '<div><div class="k">Vehicle</div><div class="v">'+escapeHtml(m.vehicleDesc||"—")+'</div></div>'+
+    '<div><div class="k">Person</div><div class="v">'+escapeHtml(m.personName||"—")+'</div></div>'+
+    '</div>'+
+    '<div class="field-block"><div class="k">Details</div><div class="v">'+nl2br(m.narrative||"—")+'</div></div>'+
+    (m.photoUrls && m.photoUrls.length? '<div class="field-block"><div class="k">Photos</div><div class="v" style="display:flex;gap:8px;flex-wrap:wrap;">'+m.photoUrls.map(function(u){return '<a href="'+escapeHtml(u)+'" target="_blank" rel="noopener"><img src="'+escapeHtml(u)+'" style="width:90px;height:90px;object-fit:cover;border-radius:6px;border:1px solid hsl(var(--border));"></a>';}).join("")+'</div></div>':'')+
+    '</div></div>';
+}
+function wireScic(){
+  var form = document.getElementById("scicSearchForm");
+  if(form) form.addEventListener("submit", function(e){
+    e.preventDefault();
+    var fd = new FormData(form);
+    uiState.scicSearch = {plate:(fd.get("plate")||"").trim(), name:(fd.get("name")||"").trim()};
+    render();
+  });
+  var clr = document.getElementById("scicSearchClear");
+  if(clr) clr.addEventListener("click", function(){ uiState.scicSearch={}; render(); });
+  document.querySelectorAll("[data-scic-open]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var id=b.getAttribute("data-scic-open"), r=b.getAttribute("data-scic-route"), f=b.getAttribute("data-scic-field");
+      uiState[f]=id;
+      if(r==="scic"){ render(); } else { nav(r); }
     });
-    var scopeId = mapScopePostId();
-    var html = '<div class="section-head"><h2>S.C.I.C. — Security Critical Information Center</h2><span class="meta">'+filtered.length+' of '+entries.length+' records · '+(scopeId?mapScopeLabel(scopeId):"all assigned sites")+'</span></div>';
-    html += '<div class="card" style="margin-bottom:16px;"><div style="font-weight:700;margin-bottom:10px;">Search</div><form id="scicSearchForm"><div class="two-col" style="gap:10px;">'+
-      '<label class="field"><span class="lbl">Vehicle License Plate #</span><input type="text" name="plate" placeholder="e.g. 7ABC123" value="'+escapeHtml(q.plate||"")+'"></label>'+
-      '<label class="field"><span class="lbl">Person\'s Name</span><input type="text" name="name" placeholder="Search name, subject or narrative…" value="'+escapeHtml(q.name||"")+'"></label>'+
-      '</div><div style="display:flex;gap:8px;"><button type="submit" class="btn sm primary">Search</button><button type="button" class="btn sm" id="scicSearchClear">Clear search</button></div></form></div>';
-    html += '<div class="small-muted" style="margin-bottom:10px;">Combines Trespass Reports and Parking Lot Violations. Restricted to guards and supervisors, scoped to the site(s) you are assigned to — never other sites.</div>';
-    if(!filtered.length){ html += '<div class="empty-state">No matching S.C.I.C. records.</div>'; }
-    else {
-      html += '<div class="card"><table class="datatable"><thead><tr><th>Date</th><th>Source</th><th>ID</th><th>Site</th><th>Plate</th><th>Person</th><th>Summary</th><th></th></tr></thead><tbody>'+
-        filtered.map(function(e){
-          return '<tr><td class="mono small-muted" style="white-space:nowrap;">'+fmtShort(e.occurred)+'</td>'+
-            '<td><span class="pill '+(e.source==="TRESPASS"?"warn":"muted")+'">'+e.source+'</span></td>'+
-            '<td class="mono">'+escapeHtml(e.id)+'</td>'+
-            '<td>'+escapeHtml(e.post||"—")+'</td>'+
-            '<td>'+escapeHtml(e.plate||"—")+(e.plateState?" "+escapeHtml(e.plateState):"")+'</td>'+
-            '<td>'+escapeHtml(e.person||"—")+'</td>'+
-            '<td>'+escapeHtml(e.summary||"—")+(e.photoUrls.length?' <span class="pill muted">📷 '+e.photoUrls.length+'</span>':'')+'</td>'+
-            '<td><button class="btn sm" data-scic-open="'+escapeHtml(e.id)+'" data-scic-route="'+e.openRoute+'" data-scic-field="'+e.openField+'">Open</button></td>'+
-            '</tr>';
-        }).join("")+'</tbody></table></div>';
-    }
-    return html;
+  });
+var scicBd = document.querySelector("[data-close-scic]");
+if(scicBd) scicBd.addEventListener("click", function(){ uiState.openScicId=null; render(); });
+var scicCloseBtn = document.querySelector('[data-action="closeScicModal"]');
+if(scicCloseBtn) scicCloseBtn.addEventListener("click", function(){ uiState.openScicId=null; render(); });
+var entryForm = document.getElementById("scicEntryForm");
+if(entryForm) entryForm.addEventListener("submit", function(e){
+  e.preventDefault();
+  var fd = new FormData(entryForm);
+  var postId = fd.get("post")||"";
+  var narrative = (fd.get("narrative")||"").trim();
+  if(!postId || !narrative){ toast("Site and Critical Information details are required."); return; }
+  var post = STATE.posts.find(function(p){return p.id===postId;});
+  var m = {
+    id:uid("scic"), post: postId?(postId+" "+(post?post.name:"")):"",
+    plate: fd.get("plate")||"", plateState:(fd.get("plateState")||"").toUpperCase(), vehicleDesc: fd.get("vehicleDesc")||"",
+    personName: fd.get("personName")||"", narrative: narrative, photoUrls:[],
+    writtenBy: session.name, writtenByCallsign: session.callsign, createdAt: nowIso()
+  };
+  STATE.scicManual = STATE.scicManual||[];
+  STATE.scicManual.unshift(m);
+  logActivity("SCIC", session.callsign, "Critical info entry added"+(m.post?" — "+m.post:"")+": "+narrative.slice(0,80));
+  entryForm.reset();
+  persist(function(){ return DB.scic.insert(m); }, "S.C.I.C. entry "+m.id);
+  var photoFiles = fd.getAll("photos").filter(function(f){ return f && f.size>0; });
+  if(photoFiles.length && DB.configured && DB.storage){
+    DB.storage.uploadPhotos("scic", m.id, photoFiles).then(function(urls){
+      m.photoUrls = urls;
+      persist(function(){ return DB.scic.update(m.id, {photo_urls:urls}); }, "photos for "+m.id);
+    }).catch(function(e){ toast("Photo upload failed for "+m.id+": "+(e.message||e)); });
   }
-  function wireScic(){
-    var form = document.getElementById("scicSearchForm");
-    if(form) form.addEventListener("submit", function(e){
-      e.preventDefault();
-      var fd = new FormData(form);
-      uiState.scicSearch = {plate:(fd.get("plate")||"").trim(), name:(fd.get("name")||"").trim()};
-      render();
-    });
-    var clr = document.getElementById("scicSearchClear");
-    if(clr) clr.addEventListener("click", function(){ uiState.scicSearch={}; render(); });
-    document.querySelectorAll("[data-scic-open]").forEach(function(b){
-      b.addEventListener("click", function(){
-        var id=b.getAttribute("data-scic-open"), r=b.getAttribute("data-scic-route"), f=b.getAttribute("data-scic-field");
-        uiState[f]=id;
-        nav(r);
-      });
-    });
-  }
+});
   
-  document.addEventListener("DOMContentLoaded", init);
+}
+
+document.addEventListener("DOMContentLoaded", init);
 })();
-
-

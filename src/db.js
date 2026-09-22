@@ -360,7 +360,8 @@ re-publishing the entire app state on every change. */
     /* Manually authored S.C.I.C. entries (Critical Security Information) — only SUPV accounts
     can insert, from src/part3.js renderScic/wireScic's "New Critical Info Entry" form. */
     scic: {
-       insert: function(e){ return insertRow("scic_entries", scicToRow(e)); }
+       insert: function(e){ return insertRow("scic_entries", scicToRow(e)); },
+        update: function(id, patch){ return updateRow("scic_entries","id",id,patch); }
     },
       activity: {
              insert: function(entry){ return insertRow("activity_log", {at:entry.at, type:entry.type, actor:entry.actor, text:entry.text}); }
