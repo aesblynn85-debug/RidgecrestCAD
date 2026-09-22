@@ -1063,6 +1063,12 @@ function scicEntries(){
               person:r.involvedParties||r.subject, summary:r.subject, narrative:r.narrative, photoUrls:r.photoUrls||[],
               openRoute:"reports", openField:"openReportId"});
   });
+(STATE.scicManual||[]).filter(function(m){return scicVisible(m.post);}).forEach(function(m){
+  var snippet = (m.narrative||"").slice(0,80);
+  out.push({source:"MANUAL", id:m.id, occurred:m.createdAt, post:m.post, plate:m.plate, plateState:m.plateState,
+            vehicleDesc:m.vehicleDesc, person:m.personName, summary:snippet, narrative:m.narrative, photoUrls:m.photoUrls||[],
+            openRoute:"scic", openField:"openScicId"});
+});
   out.sort(function(a,b){return new Date(b.occurred)-new Date(a.occurred);});
   return out;
 }
@@ -1076,6 +1082,26 @@ function renderScic(){
   });
   var scopeId = mapScopePostId();
   var html = '<div class="section-head"><h2>S.C.I.C. — Security Critical Information Center</h2><span class="meta">'+filtered.length+' of '+entries.length+' records · '+(scopeId?mapScopeLabel(scopeId):"all assigned sites")+'</span></div>';
+  var scicScopePostId = mapScopePostId();
+  var scicNewEntryCard = "";
+  if(session.role==="SUPV"){
+    scicNewEntryCard = '<div class="card" style="margin-bottom:16px;"><div style="font-weight:700;margin-bottom:10px;">New Critical Info Entry</div><form id="scicEntryForm">'+
+      (scicScopePostId ?
+       ('<div class="field"><span class="lbl">Site</span><div class="v">'+escapeHtml(mapScopeLabel(scicScopePostId))+'</div><input type="hidden" name="post" value="'+escapeHtml(scicScopePostId)+'"></div>')
+       :
+       ('<label class="field"><span class="lbl">Site <span class="req">*</span></span><select name="post" required><option value="">Select site…</option>'+
+        STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+
+        '</select></label>')
+       )+
+      '<div class="grid2"><label class="field"><span class="lbl">Vehicle Plate #</span><input type="text" name="plate"></label><label class="field"><span class="lbl">State</span><input type="text" name="plateState" maxlength="2" style="text-transform:uppercase;"></label></div>'+
+      '<label class="field"><span class="lbl">Vehicle Description</span><input type="text" name="vehicleDesc" placeholder="Make / model / color"></label>'+
+      '<label class="field"><span class="lbl">Person\'s Name</span><input type="text" name="personName"></label>'+
+      '<label class="field"><span class="lbl">Critical Information <span class="req">*</span></span><textarea name="narrative" rows="3" required placeholder="Details to flag for guards at this site…"></textarea></label>'+
+      '<label class="field"><span class="lbl">Photos</span><input type="file" name="photos" accept="image/*" capture="environment" multiple></label>'+
+      '<button type="submit" class="btn primary" style="width:100%;margin-top:6px;">Add to S.C.I.C.</button>'+
+      '</form></div>';
+  }
+  html += scicNewEntryCard;
   html += '<div class="card" style="margin-bottom:16px;"><div style="font-weight:700;margin-bottom:10px;">Search</div><form id="scicSearchForm"><div class="two-col" style="gap:10px;">'+
     '<label class="field"><span class="lbl">Vehicle License Plate #</span><input type="text" name="plate" placeholder="e.g. 7ABC123" value="'+escapeHtml(q.plate||"")+'"></label>'+
     '<label class="field"><span class="lbl">Person\'s Name</span><input type="text" name="name" placeholder="Search name, subject or narrative…" value="'+escapeHtml(q.name||"")+'"></label>'+
@@ -1096,7 +1122,28 @@ function renderScic(){
           '</tr>';
       }).join("")+'</tbody></table></div>';
   }
+if(uiState.openScicId){
+  var scicOpen = (STATE.scicManual||[]).find(function(m){return m.id===uiState.openScicId;});
+  if(scicOpen) html += renderScicModal(scicOpen);
+}
   return html;
+}
+function renderScicModal(m){
+  return '<div class="modal-backdrop" data-close-scic="1"><div class="modal" onclick="event.stopPropagation()">'+
+    '<button class="close" data-action="closeScicModal">✕</button>'+
+    '<div class="rtaid">'+escapeHtml(m.id)+'</div> <span class="pill warn">MANUAL ENTRY</span>'+
+    '<h2>Critical Security Information</h2>'+
+    '<div class="kv-grid">'+
+    '<div><div class="k">Entered by</div><div class="v">'+escapeHtml(m.writtenBy||"")+'</div></div>'+
+    '<div><div class="k">Created</div><div class="v">'+fmtDT(m.createdAt)+'</div></div>'+
+    '<div><div class="k">Site</div><div class="v">'+escapeHtml(m.post||"—")+'</div></div>'+
+    '<div><div class="k">Plate</div><div class="v">'+escapeHtml(m.plate||"—")+' '+escapeHtml(m.plateState||"")+'</div></div>'+
+    '<div><div class="k">Vehicle</div><div class="v">'+escapeHtml(m.vehicleDesc||"—")+'</div></div>'+
+    '<div><div class="k">Person</div><div class="v">'+escapeHtml(m.personName||"—")+'</div></div>'+
+    '</div>'+
+    '<div class="field-block"><div class="k">Details</div><div class="v">'+nl2br(m.narrative||"—")+'</div></div>'+
+    (m.photoUrls && m.photoUrls.length? '<div class="field-block"><div class="k">Photos</div><div class="v" style="display:flex;gap:8px;flex-wrap:wrap;">'+m.photoUrls.map(function(u){return '<a href="'+escapeHtml(u)+'" target="_blank" rel="noopener"><img src="'+escapeHtml(u)+'" style="width:90px;height:90px;object-fit:cover;border-radius:6px;border:1px solid hsl(var(--border));"></a>';}).join("")+'</div></div>':'')+
+    '</div></div>';
 }
 function wireScic(){
   var form = document.getElementById("scicSearchForm");
@@ -1112,7 +1159,39 @@ function wireScic(){
     b.addEventListener("click", function(){
       var id=b.getAttribute("data-scic-open"), r=b.getAttribute("data-scic-route"), f=b.getAttribute("data-scic-field");
       uiState[f]=id;
-      nav(r);
+      if(r==="scic"){ render(); } else { nav(r); }
     });
   });
+var scicBd = document.querySelector("[data-close-scic]");
+if(scicBd) scicBd.addEventListener("click", function(){ uiState.openScicId=null; render(); });
+var scicCloseBtn = document.querySelector('[data-action="closeScicModal"]');
+if(scicCloseBtn) scicCloseBtn.addEventListener("click", function(){ uiState.openScicId=null; render(); });
+var entryForm = document.getElementById("scicEntryForm");
+if(entryForm) entryForm.addEventListener("submit", function(e){
+  e.preventDefault();
+  var fd = new FormData(entryForm);
+  var postId = fd.get("post")||"";
+  var narrative = (fd.get("narrative")||"").trim();
+  if(!postId || !narrative){ toast("Site and Critical Information details are required."); return; }
+  var post = STATE.posts.find(function(p){return p.id===postId;});
+  var m = {
+    id:uid("scic"), post: postId?(postId+" "+(post?post.name:"")):"",
+    plate: fd.get("plate")||"", plateState:(fd.get("plateState")||"").toUpperCase(), vehicleDesc: fd.get("vehicleDesc")||"",
+    personName: fd.get("personName")||"", narrative: narrative, photoUrls:[],
+    writtenBy: session.name, writtenByCallsign: session.callsign, createdAt: nowIso()
+  };
+  STATE.scicManual = STATE.scicManual||[];
+  STATE.scicManual.unshift(m);
+  logActivity("SCIC", session.callsign, "Critical info entry added"+(m.post?" — "+m.post:"")+": "+narrative.slice(0,80));
+  entryForm.reset();
+  persist(function(){ return DB.scic.insert(m); }, "S.C.I.C. entry "+m.id);
+  var photoFiles = fd.getAll("photos").filter(function(f){ return f && f.size>0; });
+  if(photoFiles.length && DB.configured && DB.storage){
+    DB.storage.uploadPhotos("scic", m.id, photoFiles).then(function(urls){
+      m.photoUrls = urls;
+      persist(function(){ return DB.scic.update(m.id, {photo_urls:urls}); }, "photos for "+m.id);
+    }).catch(function(e){ toast("Photo upload failed for "+m.id+": "+(e.message||e)); });
+  }
+});
+  
 }
