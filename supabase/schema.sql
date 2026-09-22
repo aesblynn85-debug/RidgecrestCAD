@@ -546,3 +546,42 @@ using (bucket_id = 'field-photos') with check (bucket_id = 'field-photos');
 -- site(s) (unit_sites) or a supervisor's assigned site (users.assigned_post_id) -- see
 -- scicVisible() in src/part3.js. It relies on the reports/parking_violations RLS policies
 -- (anon_all) already defined above -- no additional grants needed.
+
+
+-- ---------- S.C.I.C. manual entries (Critical Security Information) ----------
+-- Manually authored entries, distinct from the read-only parking_violations/trespass-report
+-- aggregation described above. Only SUPV accounts can create these from the "New Critical
+-- Info Entry" form in src/part3.js renderScic/wireScic -- Dispatch/Admin (assigned_post_id is
+-- null) can pick any site, while a Supervisor scoped to one site (assigned_post_id set) is
+-- locked to that site. id is client-generated text, matching every other app-authored table
+-- in this file (calls/reports/trucks/etc).
+create table if not exists scic_entries (
+        id text primary key,
+        post text not null default '',
+        plate text default '',
+        plate_state text default '',
+        vehicle_desc text default '',
+        person_name text default '',
+        narrative text not null default '',
+        photo_urls text[] not null default '{}',
+        written_by text default '',
+        written_by_callsign text default '',
+        created_at timestamptz not null default now()
+    );
+create index if not exists scic_entries_post_idx on scic_entries(post);
+create index if not exists scic_entries_created_idx on scic_entries(created_at desc);
+
+alter table scic_entries enable row level security;
+
+drop policy if exists anon_all on scic_entries;
+create policy anon_all on scic_entries for all to anon, authenticated using (true) with check (true);
+
+do $$
+begin
+    if not exists (
+            select 1 from pg_publication_tables
+            where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'scic_entries'
+        ) then
+        alter publication supabase_realtime add table scic_entries;
+    end if;
+end $$;
