@@ -25,7 +25,7 @@ function renderParking(){
     '<label class="field"><span class="lbl">Location in Lot</span><input type="text" name="locationInLot" placeholder="Row C, spot 14, near Dock 4…"></label>'+
     '<div class="grid2"><label class="field"><span class="lbl">Vehicle Plate #</span><input type="text" name="plate"></label><label class="field"><span class="lbl">State</span><input type="text" name="plateState" maxlength="2" style="text-transform:uppercase;"></label></div>'+
     '<label class="field"><span class="lbl">Vehicle Description</span><input type="text" name="vehicleDesc" placeholder="Make / model / color"></label>'+
-    '<label class="field"><span class="lbl">Driver / Subject (if known)</span><input type="text" name="driver"></label>'+'<label class="field"><span class="lbl">Photos</span><input type="file" name="photos" accept="image/*" capture="environment" multiple></label>'+
+    '<label class="field"><span class="lbl">Driver / Subject (if known)</span><input type="text" name="driver"></label>'+'<label class="field"><span class="lbl">Photos</span><input type="file" name="photos" accept="image/*" multiple></label>'+
     '<label class="field"><span class="lbl">Narrative</span><textarea name="narrative" rows="3"></textarea></label>'+
     '<label class="field"><span class="lbl">Action Taken</span><select name="actionTaken">'+C.ACTION_TAKEN_OPTS.map(function(a){return '<option>'+a+'</option>';}).join("")+'</select></label>'+
     '<div class="small-muted" style="margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Notifications</div>'+
@@ -232,7 +232,7 @@ function renderReports(){
     '<label class="chk-row"><input type="checkbox" name="ems"> EMS notified</label>'+
     '<label class="chk-row"><input type="checkbox" name="police"> Police notified</label>'+
     '<label class="field"><span class="lbl">Who else was notified</span><input type="text" name="whoElse"></label>'+
-    '<label class="chk-row"><input type="checkbox" name="force"> Force was used — physical contact, restraint or detention</label>'+'<label class="field"><span class="lbl">Photos</span><input type="file" name="photos" accept="image/*" capture="environment" multiple></label>'+
+    '<label class="chk-row"><input type="checkbox" name="force"> Force was used — physical contact, restraint or detention</label>'+'<label class="field"><span class="lbl">Photos</span><input type="file" name="photos" accept="image/*" multiple></label>'+
     '<div style="display:flex;gap:8px;margin-top:10px;"><button type="submit" class="btn primary" style="flex:1;">Submit for review</button><button type="button" class="btn" data-action="reportDraft">Save draft</button></div>'+
     '<div class="small-muted" style="margin-top:8px;">Your callsign and name are stamped on the report by the server. A submitted report locks until a supervisor approves it or returns it for corrections.</div>'+
     '</form></div>';
@@ -1097,7 +1097,7 @@ function renderScic(){
       '<label class="field"><span class="lbl">Vehicle Description</span><input type="text" name="vehicleDesc" placeholder="Make / model / color"></label>'+
       '<label class="field"><span class="lbl">Person\'s Name</span><input type="text" name="personName"></label>'+
       '<label class="field"><span class="lbl">Critical Information <span class="req">*</span></span><textarea name="narrative" rows="3" required placeholder="Details to flag for guards at this site…"></textarea></label>'+
-      '<label class="field"><span class="lbl">Photos</span><input type="file" name="photos" accept="image/*" capture="environment" multiple></label>'+
+      '<label class="field"><span class="lbl">Photos</span><input type="file" name="photos" accept="image/*" multiple></label>'+
       '<button type="submit" class="btn primary" style="width:100%;margin-top:6px;">Add to S.C.I.C.</button>'+
       '</form></div>';
   }
