@@ -2544,7 +2544,16 @@ function renderScic(){
   html += '<div class="card" style="margin-bottom:16px;"><div style="font-weight:700;margin-bottom:10px;">Search</div><form id="scicSearchForm"><div class="two-col" style="gap:10px;">'+
     '<label class="field"><span class="lbl">Vehicle License Plate #</span><input type="text" name="plate" placeholder="e.g. 7ABC123" value="'+escapeHtml(q.plate||"")+'"></label>'+
     '<label class="field"><span class="lbl">Person\'s Name</span><input type="text" name="name" placeholder="Search name, subject or narrative…" value="'+escapeHtml(q.name||"")+'"></label>'+
-    '</div><div style="display:flex;gap:8px;"><button type="submit" class="btn sm primary">Search</button><button type="button" class="btn sm" id="scicSearchClear">Clear search</button></div></form></div>';
+    '</div><div class="two-col" style="gap:10px;margin-top:8px;">'+
+    '<label class="field"><span class="lbl">Reason for Search <span class="req">*</span></span><select name="reason" id="scicSearchReason" required><option value="">Select reason…</option>'+
+      ["Trespass","Access Control","Parking Violation"].map(function(r){return '<option value="'+r+'"'+(q.reason===r?' selected':'')+'>'+r+'</option>';}).join("")+
+    '</select></label>'+
+    '<label class="field" id="scicSearchCallWrap" style="'+(q.reason==="Trespass"?"":"display:none;")+'"><span class="lbl">Linked Dispatch Call <span class="req">*</span></span><select name="callId" id="scicSearchCallId"><option value="">Select an active call…</option>'+
+      STATE.calls.filter(function(c){return c.status!=="CLEARED";}).map(function(c){return '<option value="'+c.id+'"'+(String(q.callId||"")===String(c.id)?' selected':'')+'>#'+c.id+' — '+escapeHtml(c.nature||c.code)+'</option>';}).join("")+
+    '</select></label>'+
+    '</div>'+
+    '<div class="small-muted" style="margin-top:6px;">A reason is required for every S.C.I.C. search. Trespass searches must also be linked to an active dispatch call.</div>'+
+    '<div style="display:flex;gap:8px;margin-top:8px;"><button type="submit" class="btn sm primary" id="scicSearchBtn" disabled>Search</button><button type="button" class="btn sm" id="scicSearchClear">Clear search</button></div></form>';
   html += '<div class="small-muted" style="margin-bottom:10px;">Combines Trespass Reports and Parking Lot Violations. Restricted to guards and supervisors, scoped to the site(s) you are assigned to — never other sites.</div>';
   if(!filtered.length){ html += '<div class="empty-state">No matching S.C.I.C. records.</div>'; }
   else {
@@ -2586,10 +2595,30 @@ function renderScicModal(m){
 }
 function wireScic(){
   var form = document.getElementById("scicSearchForm");
+  var reasonSel = document.getElementById("scicSearchReason");
+  var callWrap = document.getElementById("scicSearchCallWrap");
+  var callSel = document.getElementById("scicSearchCallId");
+  var searchBtn = document.getElementById("scicSearchBtn");
+  function updateScicSearchGate(){
+    if(!reasonSel || !searchBtn) return;
+    var reason = reasonSel.value;
+    var needsCall = reason === "Trespass";
+    if(callWrap) callWrap.style.display = needsCall ? "" : "none";
+    if(callSel) callSel.required = needsCall;
+    var valid = !!reason && (!needsCall || (callSel && callSel.value));
+    searchBtn.disabled = !valid;
+  }
+  if(reasonSel) reasonSel.addEventListener("change", updateScicSearchGate);
+  if(callSel) callSel.addEventListener("change", updateScicSearchGate);
+  updateScicSearchGate();
   if(form) form.addEventListener("submit", function(e){
     e.preventDefault();
     var fd = new FormData(form);
-    uiState.scicSearch = {plate:(fd.get("plate")||"").trim(), name:(fd.get("name")||"").trim()};
+    var reason = (fd.get("reason")||"").trim();
+    var callId = (fd.get("callId")||"").trim();
+    if(!reason){ alert("Select a reason for this S.C.I.C. search before continuing."); return; }
+    if(reason==="Trespass" && !callId){ alert("Trespass searches must be linked to an active dispatch call."); return; }
+    uiState.scicSearch = {plate:(fd.get("plate")||"").trim(), name:(fd.get("name")||"").trim(), reason:reason, callId:callId};
     render();
   });
   var clr = document.getElementById("scicSearchClear");
