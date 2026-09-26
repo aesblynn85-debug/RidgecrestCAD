@@ -585,3 +585,38 @@ begin
         alter publication supabase_realtime add table scic_entries;
     end if;
 end $$;
+
+-- ---------- SCIC search audit log (src/part3.js renderAuditLog) ----------
+-- Records every search a guard/dispatcher/supervisor runs against S.C.I.C.,
+-- including the required reason and (for Trespass) the linked call, so
+-- supervisors and admins can review for misuse.
+create table if not exists scic_search_log (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  account_callsign text not null default '',
+  account_name text not null default '',
+  account_role text not null default '',
+  reason text not null default '',
+  plate text default '',
+  query_name text default '',
+  call_id text default '',
+  call_started_at timestamptz,
+  post text default ''
+);
+create index if not exists scic_search_log_created_idx on scic_search_log(created_at desc);
+create index if not exists scic_search_log_account_idx on scic_search_log(account_callsign);
+
+alter table scic_search_log enable row level security;
+
+drop policy if exists anon_all on scic_search_log;
+create policy anon_all on scic_search_log for all to anon, authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'scic_search_log'
+  ) then
+    alter publication supabase_realtime add table scic_search_log;
+  end if;
+end $$;

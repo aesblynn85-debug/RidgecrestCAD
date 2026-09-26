@@ -15,6 +15,7 @@
    {id:"reports", label:"Field Reports", ic:"☷"},
    {id:"guardnotes", label:"Guard Notes", ic:"✎"},
    {id:"scic", label:"S.C.I.C.", ic:"◈"},
+  {id:"auditlog", label:"Audit Log", ic:"⚠", supvOnly:true},
    {id:"log", label:"Activity Log", ic:"≡"},
    {id:"users", label:"Users", ic:"☺"},
    // Dispatch/Supervisor/Admin only — filtered out of the sidebar for guards in renderShell,
@@ -346,7 +347,7 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
      case "log": return renderLog();
      case "users": return renderUsers();
      case "map": return renderMap();
-     case "callhistory": return renderCallHistory(); case "scic": return renderScic();
+     case "callhistory": return renderCallHistory(); case "scic": return renderScic(); case "auditlog": return renderAuditLog();
      default: return renderDispatch();
    }
  }
@@ -497,7 +498,7 @@ function wireGlobal(){
    if(route==="log") wireLog();
    if(route==="users") wireUsers();
    if(route==="map") wireMap();
-   if(route==="callhistory") wireCallHistory(); if(route==="scic") wireScic();
+   if(route==="callhistory") wireCallHistory(); if(route==="scic") wireScic(); if(route==="auditlog") wireAuditLog();
  }
 
  /* app.js continues in part2.js / part3.js, appended below via the build step */

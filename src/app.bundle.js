@@ -15,6 +15,7 @@
    {id:"reports", label:"Field Reports", ic:"☷"},
    {id:"guardnotes", label:"Guard Notes", ic:"✎"},
    {id:"scic", label:"S.C.I.C.", ic:"◈"},
+  {id:"auditlog", label:"Audit Log", ic:"⚠", supvOnly:true},
    {id:"log", label:"Activity Log", ic:"≡"},
    {id:"users", label:"Users", ic:"☺"},
    // Dispatch/Supervisor/Admin only — filtered out of the sidebar for guards in renderShell,
@@ -346,7 +347,7 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
      case "log": return renderLog();
      case "users": return renderUsers();
      case "map": return renderMap();
-     case "callhistory": return renderCallHistory(); case "scic": return renderScic();
+     case "callhistory": return renderCallHistory(); case "scic": return renderScic(); case "auditlog": return renderAuditLog();
      default: return renderDispatch();
    }
  }
@@ -497,7 +498,7 @@ function wireGlobal(){
    if(route==="log") wireLog();
    if(route==="users") wireUsers();
    if(route==="map") wireMap();
-   if(route==="callhistory") wireCallHistory(); if(route==="scic") wireScic();
+   if(route==="callhistory") wireCallHistory(); if(route==="scic") wireScic(); if(route==="auditlog") wireAuditLog();
  }
 
  /* app.js continues in part2.js / part3.js, appended below via the build step */
@@ -2593,6 +2594,95 @@ function renderScicModal(m){
     (m.photoUrls && m.photoUrls.length? '<div class="field-block"><div class="k">Photos</div><div class="v" style="display:flex;gap:8px;flex-wrap:wrap;">'+m.photoUrls.map(function(u){return '<a href="'+escapeHtml(u)+'" target="_blank" rel="noopener"><img src="'+escapeHtml(u)+'" style="width:90px;height:90px;object-fit:cover;border-radius:6px;border:1px solid hsl(var(--border));"></a>';}).join("")+'</div></div>':'')+
     '</div></div>';
 }
+
+/* ---------------- Audit Log -- S.C.I.C. search review (supervisors/admins only) ----------------
+   Lists every recorded S.C.I.C. search (src/db.js scicSearchLogFromRow) and automatically flags:
+     (a) Trespass searches run more than 4 hours after their linked call started
+     (b) The same account repeating the same plate/subject search more than once within an 8-hour shift
+*/
+function fmtHrsMins(ms){
+  var totalMin = Math.round(ms/60000);
+  var h = Math.floor(totalMin/60), m = totalMin%60;
+  return (h>0? h+"h ":"")+m+"m";
+}
+function computeScicSearchFlags(entries){
+  var FOUR_HOURS = 4*60*60*1000, EIGHT_HOURS = 8*60*60*1000;
+  entries.forEach(function(e){ e._flags = []; });
+  entries.forEach(function(e){
+    if(e.reason==="Trespass" && e.callStartedAt){
+      var deltaMs = new Date(e.createdAt) - new Date(e.callStartedAt);
+      if(deltaMs > FOUR_HOURS){
+        e._flags.push("Trespass search "+fmtHrsMins(deltaMs)+" after call #"+e.callId+" started");
+      }
+    }
+  });
+  var groups = {};
+  entries.forEach(function(e){
+    var subject = (e.plate||"").trim().toUpperCase() || (e.queryName||"").trim().toLowerCase();
+    if(!subject) return;
+    var key = e.accountCallsign+"||"+subject;
+    (groups[key] = groups[key]||[]).push(e);
+  });
+  Object.keys(groups).forEach(function(k){
+    var list = groups[k];
+    var flaggedIds = {};
+    for(var i=0;i<list.length;i++){
+      var clusterCount = 1;
+      for(var j=0;j<list.length;j++){
+        if(i===j) continue;
+        var d = Math.abs(new Date(list[i].createdAt) - new Date(list[j].createdAt));
+        if(d <= EIGHT_HOURS) clusterCount++;
+      }
+      if(clusterCount>1 && !flaggedIds[list[i].id]){
+        var subjectLabel = (list[i].plate||"").trim() ? ("plate "+list[i].plate) : ('query "'+list[i].queryName+'"');
+        list[i]._flags.push("Repeat search: same "+subjectLabel+" searched "+clusterCount+"x by "+list[i].accountCallsign+" within an 8-hour shift");
+        flaggedIds[list[i].id] = true;
+      }
+    }
+  });
+  return entries;
+}
+function renderAuditLog(){
+  if(!session || session.role!=="SUPV"){
+    return '<div class="card"><div class="empty-state">This view is limited to Dispatch, Supervisors, and Admins.</div></div>';
+  }
+  var raw = computeScicSearchFlags((STATE.scicSearchLog||[]).slice());
+  var filter = uiState.auditLogFilter || "ALL";
+  var sorted = raw.slice().sort(function(a,b){ return new Date(b.createdAt)-new Date(a.createdAt); });
+  var flaggedCount = sorted.filter(function(e){ return e._flags.length; }).length;
+  var list = filter==="FLAGGED" ? sorted.filter(function(e){ return e._flags.length; }) : sorted;
+
+  var html = '<div class="card"><div class="section-head"><h2>Audit Log \u2014 S.C.I.C. Search Activity</h2><span class="meta">'+sorted.length+' searches logged \u00b7 '+flaggedCount+' flagged</span></div>'+
+    '<div class="small-muted" style="margin-bottom:10px;">Every S.C.I.C. search performed by a guard, dispatcher, or supervisor is recorded here. Searches are automatically flagged when a Trespass search happens more than 4 hours after its linked call started, or when the same account repeats the same plate or subject search more than once within an 8-hour shift.</div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:10px;">'+
+      '<button type="button" class="btn sm'+(filter==="ALL"?" primary":"")+'" data-audit-filter="ALL">All ('+sorted.length+')</button>'+
+      '<button type="button" class="btn sm'+(filter==="FLAGGED"?" primary":"")+'" data-audit-filter="FLAGGED">Flagged only ('+flaggedCount+')</button>'+
+    '</div>';
+
+  if(!list.length){
+    html += '<div class="empty-state">'+(filter==="FLAGGED"?"No flagged searches.":"No S.C.I.C. searches logged yet.")+'</div>';
+  } else {
+    html += '<div class="card" style="padding:0;overflow:auto;"><table class="datatable"><thead><tr><th>Date / Time</th><th>Account</th><th>Role</th><th>Reason</th><th>Query</th><th>Linked Call</th><th>Flags</th></tr></thead><tbody>';
+    list.forEach(function(e){
+      var queryBits = [];
+      if(e.plate) queryBits.push("Plate "+escapeHtml(e.plate));
+      if(e.queryName) queryBits.push('\u201c'+escapeHtml(e.queryName)+'\u201d');
+      var flagged = e._flags.length>0;
+      html += '<tr'+(flagged? ' style="background:rgba(255,120,0,0.12);"' : '')+'>'+
+        '<td>'+fmtDT(e.createdAt)+'</td>'+
+        '<td>'+escapeHtml(e.accountName||e.accountCallsign||"\u2014")+' <span class="small-muted">'+escapeHtml(e.accountCallsign||"")+'</span></td>'+
+        '<td>'+escapeHtml(e.accountRole||"\u2014")+'</td>'+
+        '<td>'+escapeHtml(e.reason||"\u2014")+'</td>'+
+        '<td>'+(queryBits.length? queryBits.join(" \u00b7 ") : '<span class="small-muted">\u2014</span>')+'</td>'+
+        '<td>'+(e.callId? "#"+escapeHtml(e.callId) : '<span class="small-muted">\u2014</span>')+'</td>'+
+        '<td>'+(flagged? ('<span class="pill warn">FLAGGED</span><div class="small-muted" style="margin-top:4px;">'+e._flags.map(escapeHtml).join("<br>")+'</div>') : '<span class="small-muted">\u2014</span>')+'</td>'+
+      '</tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+  html += '</div>';
+  return html;
+}
 function wireScic(){
   var form = document.getElementById("scicSearchForm");
   var reasonSel = document.getElementById("scicSearchReason");
@@ -2618,8 +2708,19 @@ function wireScic(){
     var callId = (fd.get("callId")||"").trim();
     if(!reason){ alert("Select a reason for this S.C.I.C. search before continuing."); return; }
     if(reason==="Trespass" && !callId){ alert("Trespass searches must be linked to an active dispatch call."); return; }
-    uiState.scicSearch = {plate:(fd.get("plate")||"").trim(), name:(fd.get("name")||"").trim(), reason:reason, callId:callId};
-    render();
+      uiState.scicSearch = {plate:(fd.get("plate")||"").trim(), name:(fd.get("name")||"").trim(), reason:reason, callId:callId};
+      var searchCall = callId ? (STATE.calls||[]).find(function(c){ return String(c.id)===String(callId); }) : null;
+      var searchPost = (STATE.posts||[]).find(function(p){ return p.id===session.assignedPostId; });
+      var logEntry = {
+        id: uid("scicsearch"), createdAt: nowIso(),
+        accountCallsign: session.callsign, accountName: session.name, accountRole: session.role,
+        reason: reason, plate: (fd.get("plate")||"").trim(), queryName: (fd.get("name")||"").trim(),
+        callId: callId||"", callStartedAt: searchCall?searchCall.createdAt:null,
+        post: searchPost?searchPost.name:""
+      };
+      STATE.scicSearchLog = STATE.scicSearchLog||[];
+      STATE.scicSearchLog.unshift(logEntry);
+      persist(function(){ return DB.scicLog.insert(logEntry); }, "SCIC search logged");
   });
   var clr = document.getElementById("scicSearchClear");
   if(clr) clr.addEventListener("click", function(){ uiState.scicSearch={}; render(); });
@@ -2662,6 +2763,14 @@ if(entryForm) entryForm.addEventListener("submit", function(e){
   }
 });
   
+}
+function wireAuditLog(){
+  document.querySelectorAll("[data-audit-filter]").forEach(function(b){
+    b.addEventListener("click", function(){
+      uiState.auditLogFilter = b.getAttribute("data-audit-filter");
+      render();
+    });
+  });
 }
 
 document.addEventListener("DOMContentLoaded", init);

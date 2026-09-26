@@ -120,6 +120,20 @@ re-publishing the entire app state on every change. */
               written_by_callsign:e.writtenByCallsign||""};
    }
 
+    /* SCIC search audit log (src/part3.js renderAuditLog) -- records every
+       search a guard/dispatcher/supervisor runs against S.C.I.C., including
+       the required reason and (for Trespass) the linked call, so supervisors
+       and admins can review for misuse. */
+    function scicSearchLogFromRow(r){
+      return {id:r.id, createdAt:r.created_at, accountCallsign:r.account_callsign||"", accountName:r.account_name||"", accountRole:r.account_role||"",
+              reason:r.reason||"", plate:r.plate||"", queryName:r.query_name||"", callId:r.call_id||"", callStartedAt:r.call_started_at||null, post:r.post||""};
+    }
+    function scicSearchLogToRow(e){
+      return {id:e.id, account_callsign:e.accountCallsign||"", account_name:e.accountName||"", account_role:e.accountRole||"",
+              reason:e.reason||"", plate:e.plate||"", query_name:e.queryName||"", call_id:e.callId||"", call_started_at:e.callStartedAt||null, post:e.post||"",
+              created_at:e.createdAt};
+    }
+
  /* ---------- patrol tours: a site (post) can have many tours, each an ordered list of scan
    points a supervisor builds live by walking the route (see src/part3.js wireTours). ---------- */
  function tourFromRow(r){
@@ -186,7 +200,8 @@ re-publishing the entire app state on every change. */
              sb.from("tour_point_scans").select("*").order("at",{ascending:false}).limit(2000),
              sb.from("guard_notes").select("*").order("created_at",{ascending:false}),
              sb.from("unit_sites").select("*"),
-         sb.from("scic_entries").select("*").order("created_at",{ascending:false})
+			sb.from("scic_entries").select("*").order("created_at",{ascending:false}),
+			sb.from("scic_search_log").select("*").order("created_at",{ascending:false}).limit(2000)
            ]);
       results.forEach(chk);
       var users = results[0].data, units = results[1].data, posts = results[2].data, checkpoints = results[3].data,
@@ -194,7 +209,7 @@ re-publishing the entire app state on every change. */
              trucks = results[8].data, reports = results[9].data, pvs = results[10].data, police = results[11].data,
              activity = results[12].data, counters = results[13].data, scans = results[14].data, liveLocs = results[15].data,
              tours = results[16].data, tourPoints = results[17].data, tourAssignments = results[18].data, tourScans = results[19].data,
-             guardNotes = results[20].data, unitSiteRows = results[21].data, scicRows = results[22].data;
+             guardNotes = results[20].data, unitSiteRows = results[21].data, scicRows = results[22].data, scicSearchLogRows = results[23].data;
 
      var callsOut = calls.map(callFromRow);
       supplements.forEach(function(s){
@@ -247,7 +262,8 @@ re-publishing the entire app state on every change. */
             unitSites: unitSiteRows.map(unitSiteFromRow),
         // Manually authored S.C.I.C. entries (src/part3.js renderScic) — merged into scicEntries()
         // alongside the read-only parking_violations/trespass-report aggregation.
-        scicManual: scicRows.map(scicFromRow)
+        scicManual: scicRows.map(scicFromRow),
+		scicSearchLog: scicSearchLogRows.map(scicSearchLogFromRow),
      };
  }
 
@@ -363,6 +379,9 @@ re-publishing the entire app state on every change. */
        insert: function(e){ return insertRow("scic_entries", scicToRow(e)); },
         update: function(id, patch){ return updateRow("scic_entries","id",id,patch); }
     },
+		scicLog: {
+			insert: function(e){ return insertRow("scic_search_log", scicSearchLogToRow(e)); }
+		},
       activity: {
              insert: function(entry){ return insertRow("activity_log", {at:entry.at, type:entry.type, actor:entry.actor, text:entry.text}); }
       },
@@ -413,7 +432,7 @@ re-publishing the entire app state on every change. */
       subscribeRealtime: function(onChange){
              if(!sb) return null;
              var tables = ["units","posts","unit_sites","calls","call_supplements","chat_messages","trucks","reports","parking_violations","police_on_property","guard_notes","checkpoints","activity_log","checkpoint_scans","guard_locations",
-                                 "patrol_tours","patrol_tour_points","tour_assignments","tour_point_scans","scic_entries"];
+                                 "patrol_tours","patrol_tour_points","tour_assignments","tour_point_scans","scic_entries","scic_search_log"];
              var channel = sb.channel("cad-live");
              tables.forEach(function(t){
                       channel.on("postgres_changes", {event:"*", schema:"public", table:t}, function(payload){ onChange(t, payload); });
