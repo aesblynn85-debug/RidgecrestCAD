@@ -30,7 +30,7 @@ create extension if not exists "pgcrypto" with schema public;
 create table if not exists users (
     callsign text primary key,
     name text not null,
-    role text not null check (role in ('SUPV','GUARD','CLIENT')),
+    role text not null check (role in ('ADMIN','SUPV','DISPATCH','GUARD','CLIENT')),
     title text default '',
     pin_hash text not null, -- bcrypt hash, never plaintext
   must_change_pin boolean not null default false,
@@ -469,6 +469,19 @@ $$;
 -- access" control); p_post_id of null means "every site" (Dispatch/Admin). Like the other
 -- users writes above, this goes through a security-definer RPC rather than a direct table
 -- update, since anon/authenticated only has a SELECT policy on users (see below).
+-- Account types (src/app.js ROLE_NAV): ADMIN and SUPV see every tab, DISPATCH and GUARD a fixed
+-- subset; ADMIN/DISPATCH see every site, SUPV/GUARD only their assigned sites. Set from the Users
+-- tab's "Account type" control. CLIENT accounts are created separately and can't be changed here.
+create or replace function set_user_role(p_callsign text, p_role text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if p_role not in ('ADMIN','SUPV','DISPATCH','GUARD') then
+    raise exception 'Invalid account type: %', p_role;
+  end if;
+  update users set role = p_role where callsign = p_callsign and role <> 'CLIENT';
+end;
+$$;
+
 create or replace function set_assigned_post(p_callsign text, p_post_id text)
 returns void language sql security definer set search_path = public, extensions as $$
   update users set assigned_post_id = p_post_id where callsign = p_callsign;
@@ -489,6 +502,7 @@ grant execute on function create_guard(text,text,text) to anon, authenticated;
 grant execute on function reset_pin(text) to anon, authenticated;
 grant execute on function record_sign_in(text) to anon, authenticated;
 grant execute on function set_assigned_post(text,text) to anon, authenticated;
+grant execute on function set_user_role(text,text) to anon, authenticated;
 grant execute on function set_user_active(text,boolean) to anon, authenticated;
 grant execute on function next_counter(text) to anon, authenticated;
 
