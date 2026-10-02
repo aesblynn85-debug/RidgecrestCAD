@@ -13,13 +13,13 @@ function renderParking(){
     C.VIOLATION_TYPES.map(function(v){return '<option value="'+v[0]+'">'+escapeHtml(v[1])+'</option>';}).join("")+
     '</select></label>'+
     '<label class="field"><span class="lbl">Attach to Call</span><select name="call"><option value="">Standalone — not tied to a call</option>'+
-    STATE.calls.filter(function(c){return c.status!=="CLEARED";}).map(function(c){return '<option value="'+c.id+'">#'+c.id+' — '+escapeHtml(c.nature||c.code)+'</option>';}).join("")+
+    STATE.calls.filter(function(c){return c.status!=="CLEARED" && visibleToMe(c.post);}).map(function(c){return '<option value="'+c.id+'">#'+c.id+' — '+escapeHtml(c.nature||c.code)+'</option>';}).join("")+
     '</select></label>'+
     '<label class="field"><span class="lbl">Attach to Report</span><select name="report"><option value="">Not linked to a report</option>'+
     STATE.reports.map(function(r){return '<option value="'+r.id+'">'+r.id+' — '+escapeHtml(r.subject)+'</option>';}).join("")+
     '</select></label>'+
     '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+
-    STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+
+    visiblePosts().map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+
     '</select></label>'+
     '<label class="field"><span class="lbl">Occurred <span class="req">*</span></span><input type="datetime-local" name="occurred" required value="'+nowLocalInput()+'"></label>'+
     '<label class="field"><span class="lbl">Location in Lot</span><input type="text" name="locationInLot" placeholder="Row C, spot 14, near Dock 4…"></label>'+
@@ -76,7 +76,7 @@ function renderParkModal(v){
 var C = window.__CAD;
   var typeLabel = (C.VIOLATION_TYPES.find(function(t){return t[0]===v.vtype;})||["",v.vtype])[1];
   var st = v.status==="OPEN" ? "SUBMITTED" : v.status;
-  var canReview = session.role==="SUPV" && (v.status==="SUBMITTED" || v.status==="OPEN");
+  var canReview = isManager() && (v.status==="SUBMITTED" || v.status==="OPEN");
   var canClose = v.status==="SUBMITTED" || v.status==="OPEN" || v.status==="APPROVED";
   var linkedReport = v.reportId ? STATE.reports.find(function(r){return r.id===v.reportId;}) : null;
   return '<div class="modal-backdrop" data-close-park="1"><div class="modal" onclick="event.stopPropagation()">'+
@@ -177,7 +177,7 @@ var cbtn = document.querySelector('[data-action="closeParkModal"]');
   if(csvBtn) csvBtn.addEventListener("click", function(){ var pickId=(document.getElementById("parkCsvPick")||{}).value||""; var fromDate=(document.getElementById("parkCsvFrom")||{}).value||""; var toDate=(document.getElementById("parkCsvTo")||{}).value||""; downloadCsv("parking_violations.csv", parkingToCsv(pickId, fromDate, toDate)); });
 }
 
-function parkingToCsv(pickId, fromDate, toDate){ var scopeId = mapScopePostId(); function pvOk(v){ if(!visibleToMe(v.post)) return false; if(scopeId && (v.post||"").indexOf(scopeId)!==0) return false; if(pickId) return v.id===pickId; if(fromDate && v.occurred && v.occurred.slice(0,10) < fromDate) return false; if(toDate && v.occurred && v.occurred.slice(0,10) > toDate) return false; return true; }
+function parkingToCsv(pickId, fromDate, toDate){ var scopeId = ""; function pvOk(v){ if(!visibleToMe(v.post)) return false; if(scopeId && (v.post||"").indexOf(scopeId)!==0) return false; if(pickId) return v.id===pickId; if(fromDate && v.occurred && v.occurred.slice(0,10) < fromDate) return false; if(toDate && v.occurred && v.occurred.slice(0,10) > toDate) return false; return true; }
   var rows = [["ID","Type","Status","Occurred","Post","Linked Report","Plate","State","Vehicle","Driver","Action Taken","Written By","Narrative"]];
   STATE.parkingViolations.filter(pvOk).forEach(function(v){
     var typeLabel = (window.__CAD.VIOLATION_TYPES.find(function(t){return t[0]===v.vtype;})||["",v.vtype])[1];
@@ -193,7 +193,7 @@ function downloadCsv(filename, rows){
   setTimeout(function(){URL.revokeObjectURL(url);}, 2000);
 }
 
-function reportsToCsv(pickId, fromDate, toDate){ var scopeId = mapScopePostId(); function rvOk(r){ if(!visibleToMe(r.post)) return false; if(scopeId && (r.post||"").indexOf(scopeId)!==0) return false; if(pickId) return r.id===pickId; if(fromDate && r.occurred && r.occurred.slice(0,10) < fromDate) return false; if(toDate && r.occurred && r.occurred.slice(0,10) > toDate) return false; return true; } var rows=[["ID","Type","Status","Occurred","Subject","WrittenBy","Post","Narrative"]]; STATE.reports.filter(rvOk).forEach(function(r){ rows.push([r.id,r.typeLabel,r.status,r.occurred,r.subject,r.writtenBy,r.post,r.narrative]); }); return rows; } /* ---------------- FIELD REPORTS ---------------- */
+function reportsToCsv(pickId, fromDate, toDate){ var scopeId = ""; function rvOk(r){ if(!visibleToMe(r.post)) return false; if(scopeId && (r.post||"").indexOf(scopeId)!==0) return false; if(pickId) return r.id===pickId; if(fromDate && r.occurred && r.occurred.slice(0,10) < fromDate) return false; if(toDate && r.occurred && r.occurred.slice(0,10) > toDate) return false; return true; } var rows=[["ID","Type","Status","Occurred","Subject","WrittenBy","Post","Narrative"]]; STATE.reports.filter(rvOk).forEach(function(r){ rows.push([r.id,r.typeLabel,r.status,r.occurred,r.subject,r.writtenBy,r.post,r.narrative]); }); return rows; } /* ---------------- FIELD REPORTS ---------------- */
 function renderReports(){
   var C = window.__CAD;
   var tab = uiState.reportsTab || "incident";
@@ -205,7 +205,7 @@ function renderReports(){
     '<button class="'+(tab==="police"?"active":"")+'" data-reptab="police">Police On Property '+STATE.policeOnProperty.filter(function(p){return !p.departedAt && visibleToMe(p.post);}).length+' now</button>'+
     '<button class="'+(tab==="self"?"active":"")+'" data-reptab="self">Self-Initiated Call</button>'+
     '</div>';
-  if(tab==="incident" && session.role==="SUPV"){ html += '<div class="card" style="margin-bottom:16px;"><div style="font-weight:700;margin-bottom:10px;">Search Reports</div><div class="two-col" style="gap:10px;"><label class="field"><span class="lbl">Site</span><select id="repSearchSite"><option value="">All sites</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+((uiState.reportsSearch||{}).site===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label><label class="field"><span class="lbl">Incident Type</span><select id="repSearchType"><option value="">All types</option>'+C.REPORT_TYPES.map(function(t){return '<option value="'+t[0]+'" '+((uiState.reportsSearch||{}).type===t[0]?"selected":"")+'>'+escapeHtml(t[1])+'</option>';}).join("")+'</select></label><label class="field"><span class="lbl">From</span><input type="date" id="repSearchFrom" value="'+((uiState.reportsSearch||{}).from||"")+'"></label><label class="field"><span class="lbl">To</span><input type="date" id="repSearchTo" value="'+((uiState.reportsSearch||{}).to||"")+'"></label></div><button class="btn sm" id="repSearchClear" type="button">Clear search</button></div>'; } if(tab==="police"){ html += renderPoliceOnProperty(); return html; }
+  if(tab==="incident" && isManager()){ html += '<div class="card" style="margin-bottom:16px;"><div style="font-weight:700;margin-bottom:10px;">Search Reports</div><div class="two-col" style="gap:10px;"><label class="field"><span class="lbl">Site</span><select id="repSearchSite"><option value="">All sites</option>'+visiblePosts().map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+((uiState.reportsSearch||{}).site===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label><label class="field"><span class="lbl">Incident Type</span><select id="repSearchType"><option value="">All types</option>'+C.REPORT_TYPES.map(function(t){return '<option value="'+t[0]+'" '+((uiState.reportsSearch||{}).type===t[0]?"selected":"")+'>'+escapeHtml(t[1])+'</option>';}).join("")+'</select></label><label class="field"><span class="lbl">From</span><input type="date" id="repSearchFrom" value="'+((uiState.reportsSearch||{}).from||"")+'"></label><label class="field"><span class="lbl">To</span><input type="date" id="repSearchTo" value="'+((uiState.reportsSearch||{}).to||"")+'"></label></div><button class="btn sm" id="repSearchClear" type="button">Clear search</button></div>'; } if(tab==="police"){ html += renderPoliceOnProperty(); return html; }
   if(tab==="self"){
     html += '<div class="empty-state">Nothing logged in this tab yet.</div>';
     return html;
@@ -216,9 +216,9 @@ function renderReports(){
     C.REPORT_TYPES.map(function(r){return '<option value="'+r[0]+'">'+escapeHtml(r[1])+'</option>';}).join("")+
     '</select></label>'+
     '<label class="field"><span class="lbl">Attach to Call</span><select name="call"><option value="">Standalone — not tied to a call</option>'+
-    STATE.calls.filter(function(c){return c.status!=="CLEARED";}).map(function(c){return '<option value="'+c.id+'">#'+c.id+'</option>';}).join("")+
+    STATE.calls.filter(function(c){return c.status!=="CLEARED" && visibleToMe(c.post);}).map(function(c){return '<option value="'+c.id+'">#'+c.id+'</option>';}).join("")+
     '</select></label>'+
-    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
+    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+visiblePosts().map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
     '<label class="field"><span class="lbl">Occurred <span class="req">*</span></span><input type="datetime-local" name="occurred" required value="'+nowLocalInput()+'"></label>'+
     '<label class="field"><span class="lbl">Location on Property</span><input type="text" name="location" placeholder="Dock 4, west fence line, lobby…"></label>'+
     '<label class="field"><span class="lbl">Subject — one line <span class="req">*</span></span><input type="text" name="subject" required placeholder="Trespass warning issued at north gate"></label>'+
@@ -264,7 +264,7 @@ if(uiState.openReportId){
 }
 
 function renderReportModal(r){
-  var canReview = session.role==="SUPV" && r.status==="SUBMITTED";
+  var canReview = isManager() && r.status==="SUBMITTED";
   return '<div class="modal-backdrop" data-close-report="1"><div class="modal" onclick="event.stopPropagation()">'+
     '<button class="close" data-action="closeReportModal">✕</button>'+
     '<div class="rtaid">'+r.id+'</div> <span class="pill '+(r.status==="APPROVED"?"ok":r.status==="RETURNED"?"destructive":"warn")+'">'+r.status+'</span> <span class="pill muted">'+escapeHtml(r.typeLabel)+'</span>'+
@@ -379,7 +379,7 @@ function renderPoliceOnProperty(){
   html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">Log Police Arrival</div><form id="policeForm">'+
     '<label class="field"><span class="lbl">Agency <span class="req">*</span></span><input type="text" name="agency" required placeholder="Ridgecrest PD, county sheriff…"></label>'+
     '<label class="field"><span class="lbl">Officer / Badge #</span><input type="text" name="officer" placeholder="Name or badge number"></label>'+
-    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
+    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+visiblePosts().map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
     '<label class="field"><span class="lbl">Reason On Property <span class="req">*</span></span><input type="text" name="reason" required placeholder="Welfare check, traffic stop, call for service…"></label>'+
     '<label class="field"><span class="lbl">Notes</span><textarea name="notes" rows="2"></textarea></label>'+
     '<button type="submit" class="btn primary" style="width:100%;">Log arrival — time in now</button></form></div>';
@@ -437,9 +437,9 @@ list = list.slice().sort(function(a,b){ if(!!b.pinned - !!a.pinned !== 0) return
   var html = '<div class="section-head"><h2>Guard Notes</h2><span class="meta">'+open.length+' open</span></div>';
   html += '<div class="two-col">';
   html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">New Note</div><form id="guardNoteForm">'+
-    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">General — not site-specific</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
+    '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">General — not site-specific</option>'+visiblePosts().map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+'</select></label>'+
     '<label class="field"><span class="lbl">Note <span class="req">*</span></span><textarea name="text" rows="4" required placeholder="Gate code changed, BOLO on a vehicle, equipment down, handoff info for next shift…"></textarea></label>'+
-    (session.role==="SUPV"? '<label class="chk-row"><input type="checkbox" name="pinned"> Pin to top — important</label>' : '')+
+    (isManager()? '<label class="chk-row"><input type="checkbox" name="pinned"> Pin to top — important</label>' : '')+
     '<button type="submit" class="btn primary" style="width:100%;">Post note</button></form></div>';
   html += '<div class="card"><div class="tabs">'+["open","resolved","all"].map(function(v){return '<button class="'+(view===v?"active":"")+'" data-gnfilter="'+v+'">'+v[0].toUpperCase()+v.slice(1)+'</button>';}).join("")+'</div>';
   if(!list.length){ html += '<div class="empty-state">No notes in this view.</div>'; }
@@ -453,7 +453,7 @@ list = list.slice().sort(function(a,b){ if(!!b.pinned - !!a.pinned !== 0) return
         (n.resolved? ' · resolved by '+escapeHtml(n.resolvedBy||"")+' '+fmtShort(n.resolvedAt) : '')+'</div>'+
         '<div style="display:flex;gap:8px;margin-top:6px;">'+
         (!n.resolved? '<button class="btn sm" data-gn-resolve="'+n.id+'">Mark resolved</button>' : '<button class="btn sm" data-gn-reopen="'+n.id+'">Reopen</button>')+
-        (session.role==="SUPV"? '<button class="btn sm" data-gn-pin="'+n.id+'">'+(n.pinned?"Unpin":"Pin")+'</button>' : '')+
+        (isManager()? '<button class="btn sm" data-gn-pin="'+n.id+'">'+(n.pinned?"Unpin":"Pin")+'</button>' : '')+
         '</div>'+
         '</div>';
     }).join("");
@@ -472,7 +472,7 @@ function wireGuardNotes(){
     if(!text){ toast("Note text is required."); return; }
     var postId = fd.get("post"); var post = STATE.posts.find(function(x){return x.id===postId;});
     var n = {id:uid("note"), post: postId?(postId+" "+(post?post.name:"")):"", text:text,
-             pinned: session.role==="SUPV" && fd.get("pinned")==="on",
+             pinned: isManager() && fd.get("pinned")==="on",
              authorName: session.name, authorCallsign: session.callsign, createdAt:nowIso(),
              resolved:false, resolvedAt:null, resolvedBy:null};
     STATE.guardNotes.unshift(n);
@@ -501,7 +501,7 @@ document.querySelectorAll("[data-gn-reopen]").forEach(function(b){
 });
   document.querySelectorAll("[data-gn-pin]").forEach(function(b){
     b.addEventListener("click", function(){
-      if(session.role!=="SUPV") return;
+      if(!isManager()) return;
       var n = STATE.guardNotes.find(function(x){return x.id===b.getAttribute("data-gn-pin");});
       if(!n) return;
       n.pinned = !n.pinned;
@@ -513,7 +513,7 @@ document.querySelectorAll("[data-gn-reopen]").forEach(function(b){
 /* ---------------- ACTIVITY LOG ---------------- */
 function renderLog(){
   var C = window.__CAD;
-  var list = STATE.activityLog;
+  var list = STATE.activityLog.filter(activityVisible);
   var html = '<div class="section-head"><h2>Activity Log</h2><span class="meta">'+list.length+' entries</span>'+
     '<div style="display:flex;gap:6px;"><button class="btn sm" data-action="logCsv">Log CSV</button></div></div>';
   html += '<div class="card" style="max-height:70vh;overflow-y:auto;"><table class="datatable"><thead><tr><th>Time</th><th>Type</th><th>Actor</th><th>Detail</th></tr></thead><tbody>'+
@@ -522,8 +522,9 @@ function renderLog(){
     }).join("") + '</tbody></table></div>';
 
 // shift report
-var calls = STATE.calls.length, cleared = STATE.calls.filter(function(c){return c.status==="CLEARED";}).length;
-  var open = STATE.calls.filter(function(c){return c.status!=="CLEARED";}).length;
+var myCalls = STATE.calls.filter(function(c){return visibleToMe(c.post);});
+  var calls = myCalls.length, cleared = myCalls.filter(function(c){return c.status==="CLEARED";}).length;
+  var open = myCalls.filter(function(c){return c.status!=="CLEARED";}).length;
   html += '<div class="card" style="margin-top:16px;"><div class="section-head"><h2>Shift Report <span class="meta">Last 12 hours</span></h2></div>'+
     '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;text-align:center;">'+
     [["Calls",calls],["Cleared",cleared],["Open now",open],["Chat traffic",STATE.chat.messages.length],["BOLOs",STATE.chat.messages.filter(function(m){return m.bolo;}).length]].map(function(s){
@@ -536,7 +537,7 @@ function wireLog(){
   var csvBtn = document.querySelector('[data-action="logCsv"]');
   if(csvBtn) csvBtn.addEventListener("click", function(){ var pickId=(document.getElementById("repCsvPick")||{}).value||""; var fromDate=(document.getElementById("repCsvFrom")||{}).value||""; var toDate=(document.getElementById("repCsvTo")||{}).value||""; downloadCsv("field_reports.csv", reportsToCsv(pickId, fromDate, toDate));
     var rows=[["Time","Type","Actor","Detail"]];
-    STATE.activityLog.forEach(function(l){ rows.push([l.at,l.type,l.actor,l.text]); });
+    STATE.activityLog.filter(activityVisible).forEach(function(l){ rows.push([l.at,l.type,l.actor,l.text]); });
     downloadCsv("activity_log.csv", rows);
   });
   var printBtn = document.querySelector('[data-action="printShift"]');
@@ -548,45 +549,81 @@ function wireLog(){
   });
 }
 
+/* Account type (role) control on the Users tab. Admins can set any type; Supervisors can set
+   Guard / Dispatch / Supervisor but can't create or change Admins. Nobody changes their own type. */
+function canManageRoles(){ return !!session && (session.role==="ADMIN" || session.role==="SUPV"); }
+var STAFF_ROLES = ["GUARD","DISPATCH","SUPV","ADMIN"];
+function roleControl(u){
+  if(u.role==="CLIENT" || !canManageRoles() || u.callsign===session.callsign) return "";
+  var opts = STAFF_ROLES;
+  if(session.role!=="ADMIN"){
+    if(u.role==="ADMIN") return "";
+    opts = ["GUARD","DISPATCH","SUPV"];
+  }
+  return '<div style="margin-top:6px;"><span class="small-muted" style="margin-right:6px;">Account type</span>'+
+    '<select class="roleSel" data-user="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:12px;padding:4px 6px;">'+
+    opts.map(function(r){ return '<option value="'+r+'" '+(u.role===r?"selected":"")+'>'+escapeHtml(ROLE_LABELS[r]||r)+'</option>'; }).join("")+
+    '</select></div>';
+}
+function wireRoleSelects(){
+  document.querySelectorAll(".roleSel").forEach(function(sel){
+    sel.addEventListener("change", async function(){
+      var cs = sel.getAttribute("data-user"), role = sel.value;
+      var u = STATE.users.find(function(x){return x.callsign===cs;});
+      if(!u || STAFF_ROLES.indexOf(role)===-1) return;
+      if((role==="ADMIN" || u.role==="ADMIN") && session.role!=="ADMIN"){ toast("Only an Admin can change Admin accounts."); render(); return; }
+      if(DB.configured){
+        try{ await DB.auth.setUserRole(cs, role); }
+        catch(e){ toast("Couldn't change the account type: "+(e.message||e)); render(); return; }
+      }
+      var from = u.role;
+      u.role = role;
+      logActivity("AUTH", session.callsign, session.name+" changed account type for "+cs+" from "+(ROLE_LABELS[from]||from)+" to "+(ROLE_LABELS[role]||role));
+      persist();
+    });
+  });
+}
+
 /* ---------------- USERS ---------------- */
 function renderUsers(){
   var pinCard = '<div class="card" style="margin-bottom:16px;"><div class="section-head"><h2>Change My PIN</h2></div>'+'<div class="small-muted" style="margin-bottom:10px;">Update the PIN for your own account ('+escapeHtml(session.callsign)+'). This does not affect any other account.</div>'+'<div class="grid2"><label class="field"><span class="lbl">Current PIN</span><input id="pinCurrent" type="password" maxlength="6" inputmode="numeric" placeholder="pin"></label>'+'<label class="field"><span class="lbl">New PIN</span><input id="pinNew" type="password" maxlength="6" inputmode="numeric" placeholder="pin"></label></div>'+'<label class="field"><span class="lbl">Confirm New PIN</span><input id="pinConfirm" type="password" maxlength="6" inputmode="numeric" placeholder="pin"></label>'+'<button class="btn primary" data-action="changeMyPin" style="margin-top:6px;">Update PIN</button>'+'</div>';
-  var active = STATE.users.filter(function(u){return u.active;}).length;
-  var html = pinCard + '<div class="card"><div class="section-head"><h2>User Accounts</h2><span class="meta">'+active+' active / '+STATE.users.length+' total</span>'+
-    (session.role==="SUPV" ? '<button class="btn sm primary" data-action="addUser">+ Add account</button> <button class="btn sm" data-action="addClient">+ Add client account</button>' : '')+
+  var visibleUsers = STATE.users.filter(userVisible);
+  var active = visibleUsers.filter(function(u){return u.active;}).length;
+  var html = pinCard + '<div class="card"><div class="section-head"><h2>User Accounts</h2><span class="meta">'+active+' active / '+visibleUsers.length+' total</span>'+
+    (isManager() ? '<button class="btn sm primary" data-action="addUser">+ Add account</button> <button class="btn sm" data-action="addClient">+ Add client account</button>' : '')+
     '</div>'+
-    '<div class="small-muted" style="margin-bottom:14px;">Every account signs in with a callsign and a PIN. Guards can read the board and report — post to Patrol Chat, scan checkpoints, log trucks and attach photos. Supervisors add the roster, post directory, these accounts and the data reset. A supervisor account\'s <b>Map access</b> controls what it sees on the Live Map: a specific site limits it to that site\'s guards (Supervisor); All Sites shows everyone (Dispatch/Admin).</div>';
-  html += STATE.users.map(function(u){
+    '<div class="small-muted" style="margin-bottom:14px;">Every account signs in with a callsign and a PIN. Guards can read the board and report — post to Patrol Chat, scan checkpoints, log trucks and attach photos. Supervisors and Admins add the roster, post directory, these accounts and the data reset. <b>Account types:</b> Admin and Supervisor accounts see every tab; Dispatch sees Live Map, Dispatch, S.C.I.C., Call History, Patrol Chat, Users and Radio PTT; Guards see Dispatch, Call History, Field Reports, Parking Lot Violations, Guard Notes, Patrol Tours, Users, Radio PTT, Patrol Chat and Truck Log. Admin and Dispatch see every site; Admins can preview any other account type with <b>View As</b> in the sidebar. Supervisors and Guards only see records for the sites they are assigned to: a Supervisor <b>Assigned site</b> below, plus the Assigned Sites on their unit in the Units tab.</div>';
+  html += visibleUsers.map(function(u){
     var mapAccess = "";
     if(u.role==="SUPV"){
       var current = u.assignedPostId||"";
       var currentPost = current ? STATE.posts.find(function(p){return p.id===current;}) : null;
-      var currentLabel = current ? (currentPost ? currentPost.id+" — "+currentPost.name : current) : "All Sites (Dispatch/Admin)";
-      mapAccess = session.role==="SUPV" ?
-        ('<div style="margin-top:6px;"><span class="small-muted" style="margin-right:6px;">Map access</span>'+
+      var currentLabel = current ? (currentPost ? currentPost.id+" — "+currentPost.name : current) : "No site assigned";
+      mapAccess = isManager() ?
+        ('<div style="margin-top:6px;"><span class="small-muted" style="margin-right:6px;">Assigned site</span>'+
          '<select class="mapAccessSel" data-user="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:12px;padding:4px 6px;">'+
-         '<option value="">All Sites (Dispatch/Admin)</option>'+
-         STATE.posts.map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(current===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
+         '<option value="">No site assigned</option>'+
+         visiblePosts().map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(current===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
          '</select></div>')
-        : ('<div class="small-muted" style="margin-top:4px;">Map access: '+escapeHtml(currentLabel)+'</div>');
+        : ('<div class="small-muted" style="margin-top:4px;">Assigned site: '+escapeHtml(currentLabel)+'</div>');
     }
     else if(u.role==="CLIENT"){
       var siteId = u.assignedPostId||"";
-      mapAccess = (session.role==="SUPV" ?
+      mapAccess = (isManager() ?
         ('<div style="margin-top:6px;"><span class="small-muted" style="margin-right:6px;">Site</span>'+
          '<select class="mapAccessSel" data-user="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:12px;padding:4px 6px;">'+
          '<option value="">Not assigned</option>'+
-         STATE.posts.map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(siteId===p.id?"selected":"")+'>'+escapeHtml(p.id+" \u2014 "+p.name)+'</option>'; }).join("")+
+         visiblePosts().map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(siteId===p.id?"selected":"")+'>'+escapeHtml(p.id+" \u2014 "+p.name)+'</option>'; }).join("")+
          '</select></div>')
         : ('<div class="small-muted" style="margin-top:4px;">Site: '+(siteId?escapeHtml(siteId):"Not assigned")+'</div>'));
     }
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid hsl(var(--border)/.6);">'+
-      '<div><div style="font-weight:700;">'+escapeHtml(u.callsign)+' <span class="pill blue">'+u.role+'</span>'+(u.callsign===session.callsign?' <span class="pill ok">YOU</span>':'')+'</div>'+
+      '<div><div style="font-weight:700;">'+escapeHtml(u.callsign)+' <span class="pill blue">'+escapeHtml(ROLE_LABELS[u.role]||u.role)+'</span>'+(u.callsign===session.callsign?' <span class="pill ok">YOU</span>':'')+'</div>'+
       '<div class="small-muted">'+escapeHtml(u.name)+' — '+escapeHtml(u.title)+'</div>'+
       '<div class="small-muted">Last sign-in: '+(u.lastSignIn?fmtShort(u.lastSignIn):"never")+'</div>'+
-      mapAccess+
+      mapAccess+roleControl(u)+
       '</div>'+
-      (session.role==="SUPV"? '<div style="display:flex;gap:6px;"><button class="btn sm" data-reset-pin="'+escapeHtml(u.callsign)+'">Reset PIN</button><button class="btn sm ghost" data-toggle-active="'+escapeHtml(u.callsign)+'">'+(u.active?"Deactivate":"Activate")+'</button></div>' : '')+
+      (isManager()? '<div style="display:flex;gap:6px;"><button class="btn sm" data-reset-pin="'+escapeHtml(u.callsign)+'">Reset PIN</button><button class="btn sm ghost" data-toggle-active="'+escapeHtml(u.callsign)+'">'+(u.active?"Deactivate":"Activate")+'</button></div>' : '')+
       '</div>';
   }).join("");
   html += '</div>';
@@ -594,6 +631,7 @@ function renderUsers(){
 }
 
 function wireUsers(){
+  wireRoleSelects();
   var pinBtn = document.querySelector('[data-action="changeMyPin"]'); if(pinBtn) pinBtn.addEventListener("click", async function(){ var cur = (document.getElementById("pinCurrent")||{}).value||""; var next = (document.getElementById("pinNew")||{}).value||""; var conf = (document.getElementById("pinConfirm")||{}).value||""; cur=cur.trim(); next=next.trim(); conf=conf.trim(); if(!cur || !next || !conf){ toast("Fill in all three PIN fields."); return; } if(next.length<4){ toast("New PIN must be at least 4 digits."); return; } if(next!==conf){ toast("New PIN and confirmation do not match."); return; } pinBtn.disabled = true; try{ var ok = DB.configured ? await DB.auth.verifyPin(session.callsign, cur) : cur==="1234"; if(!ok){ toast("Current PIN is incorrect."); pinBtn.disabled=false; return; } if(DB.configured) await DB.auth.setPin(session.callsign, next); var me = STATE.users.find(function(x){return x.callsign===session.callsign;}); if(me) me.mustChangePin = false; logActivity("AUTH", session.callsign, session.name+" changed their own PIN"); toast("PIN updated."); persist(); }catch(e){ toast("Couldn't update PIN: "+(e.message||e)); pinBtn.disabled=false; } });
   var addBtn = document.querySelector('[data-action="addUser"]');
   if(addBtn) addBtn.addEventListener("click", async function(){
@@ -615,7 +653,7 @@ function wireUsers(){
     var cs = prompt("New client username (e.g. acme.shipping)"); if(!cs) return;
     cs = cs.trim();
     var name = prompt("Employee full name")||""; if(!name) return;
-    var siteList = STATE.posts.map(function(p){return p.id+" — "+p.name;}).join("\n");
+    var siteList = visiblePosts().map(function(p){return p.id+" — "+p.name;}).join("\n");
     var postId = prompt("Assign to which site? Enter the exact site ID.\n\nAvailable sites:\n"+siteList)||"";
     postId = postId.trim();
     if(!postId || !STATE.posts.some(function(p){return p.id===postId;})){ toast("A valid site ID is required for a client account."); return; }
@@ -700,19 +738,20 @@ function mapScopeLabel(postId){
 /* Guards currently posted (units[].post) to the scoped site; unscoped (Dispatch/Admin) returns everyone. */
 function scopedGuardLocations(){
   var locs = STATE.guardLocations||[];
-  var postId = mapScopePostId();
-  if(!postId) return locs;
+  var ids = guardVisiblePostIds();
+  if(!ids) return locs;
   var atSite = {};
-  STATE.units.forEach(function(u){ if(u.post===postId) atSite[u.callsign]=1; });
+  STATE.units.forEach(function(u){ if(u.post && ids.indexOf(u.post)!==-1) atSite[u.callsign]=1; });
   return locs.filter(function(l){ return atSite[l.callsign]; });
 }
 
 function renderMap(){
-  if(!session || session.role!=="SUPV"){
+  if(!session || !isManager()){
     return '<div class="card"><div class="empty-state">This view is limited to Dispatch, Supervisors, and Admins.</div></div>';
   }
-  var postId = mapScopePostId();
-  var scopeLabel = mapScopeLabel(postId);
+  var scopeIds = guardVisiblePostIds();
+  var postId = scopeIds ? (scopeIds.join(",") || "none") : "";
+  var scopeLabel = !scopeIds ? "All Sites" : scopeIds.length===1 ? mapScopeLabel(scopeIds[0]) : scopeIds.length ? scopeIds.length+" assigned sites" : "No assigned sites";
   var locs = scopedGuardLocations();
   var trailCs = uiState.mapTrailFor||"";
   var html = '<div class="section-head"><h2>Live Guard Map</h2><span class="meta">'+locs.length+' reporting · '+escapeHtml(scopeLabel)+'</span></div>';
@@ -737,7 +776,7 @@ function renderMap(){
 }
 
 function wireMap(){
-  if(!session || session.role!=="SUPV") return;
+  if(!session || !isManager()) return;
   document.querySelectorAll("[data-map-trail]").forEach(function(b){
     b.addEventListener("click", function(){
       var cs = b.getAttribute("data-map-trail");
@@ -801,7 +840,7 @@ return (STATE.tourAssignments||[]).filter(function(a){return a.tourId===tourId;}
 function myToursToday(){
 var today = todayDateStr();
 var mine = (STATE.tourAssignments||[]).filter(function(a){return a.guardCallsign===session.callsign && a.shiftDate===today;}).map(function(a){return a.tourId;});
-return (STATE.patrolTours||[]).filter(function(t){return t.active && mine.indexOf(t.id)!==-1;});
+return (STATE.patrolTours||[]).filter(function(t){return t.active && mine.indexOf(t.id)!==-1 && postVisible(t.postId);});
 }
 function lastScanFor(pointId){
 var scans = (STATE.tourPointScans||[]).filter(function(s){return s.tourPointId===pointId && s.callsign===session.callsign;});
@@ -810,7 +849,7 @@ return scans.slice().sort(function(a,b){return new Date(b.at)-new Date(a.at);})[
 }
 
 function renderTours(){
-if(session.role==="SUPV") return renderToursSupv();
+if(isManager()) return renderToursSupv();
 return renderToursGuard();
 }
 
@@ -837,7 +876,7 @@ return html;
 }
 
 function renderToursSupv(){
-var tours = STATE.patrolTours||[];
+var tours = (STATE.patrolTours||[]).filter(function(t){return postVisible(t.postId);});
 var mine = myToursToday();
 var html = '<div class="section-head"><h2>Patrol Tours</h2><span class="meta">'+tours.filter(function(t){return t.active;}).length+' active</span></div>';
 if(mine.length){
@@ -848,7 +887,7 @@ html += '<div class="two-col">';
 html += '<div class="card"><div style="font-weight:700;margin-bottom:10px;">New Patrol Tour</div><form id="tourForm">'+
 '<label class="field"><span class="lbl">Tour Name <span class="req">*</span></span><input type="text" name="name" required placeholder="North Perimeter, Warehouse Interior…"></label>'+
 '<label class="field"><span class="lbl">Site <span class="req">*</span></span><select name="post" required><option value="">Select site…</option>'+
-STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+
+visiblePosts().map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+
 '</select></label>'+
 '<button type="submit" class="btn primary" style="width:100%;">Create tour</button></form>'+
 '<div class="small-muted" style="margin-top:10px;">After creating a tour, open it below to add scan points by walking the route — each "Add point here" tap drops a stop at your device\'s current GPS position.</div>'+
@@ -878,7 +917,7 @@ function renderTourModal(t){
 var post = STATE.posts.find(function(p){return p.id===t.postId;});
 var points = tourPointsFor(t.id);
 var assignments = tourAssignmentsFor(t.id).slice().sort(function(a,b){return new Date(b.assignedAt)-new Date(a.assignedAt);});
-var guards = STATE.users.filter(function(u){return (u.role==="GUARD"||u.role==="SUPV") && u.active;});
+var guards = STATE.users.filter(function(u){return (u.role==="GUARD"||u.role==="SUPV"||u.role==="ADMIN") && u.active && userVisible(u);});
 return '<div class="modal-backdrop" data-close-tour="1"><div class="modal" onclick="event.stopPropagation()">'+
 '<button class="close" data-action="closeTourModal">✕</button>'+
 '<h2>'+escapeHtml(t.name)+'</h2>'+
@@ -939,7 +978,7 @@ logActivity("TOUR", session.callsign, "Scanned "+(p?p.name:"a stop")+" on "+(t?t
 persist(function(){ return DB.tours.scanPoint(scan); }, "tour point scan");
 });
 });
-if(session.role==="SUPV"){ wireToursSupv(); }
+if(isManager()){ wireToursSupv(); }
 }
 
 function wireToursSupv(){
@@ -1045,9 +1084,7 @@ are assigned to via unit_sites; a CLIENT is excluded entirely) and mapScopePostI
 account scoped to one site via the Users tab "Map access" control only sees that site here
 too — left unassigned, that account sees every site, same as the Live Map / CSV exports). */
 function scicVisible(post){
-  if(!visibleToMe(post)) return false;
-  var scopeId = mapScopePostId();
-  if(scopeId && (post||"").indexOf(scopeId)!==0) return false;
+    if(!visibleToMe(post)) return false;
   return true;
 }
 function scicEntries(){
@@ -1075,22 +1112,23 @@ function scicEntries(){
 function renderScic(){
   var q = uiState.scicSearch||{};
   var entries = scicEntries();
-  var filtered = entries.filter(function(e){
+  var searched = !!(q.reason && (q.plate || q.name)); // nothing is listed until a search has been run
+  var filtered = !searched ? [] : entries.filter(function(e){
     if(q.plate){ if((e.plate||"").toLowerCase().indexOf(q.plate.toLowerCase())===-1) return false; }
     if(q.name){ var hay=((e.person||"")+" "+(e.summary||"")+" "+(e.narrative||"")).toLowerCase(); if(hay.indexOf(q.name.toLowerCase())===-1) return false; }
     return true;
   });
   var scopeId = mapScopePostId();
-  var html = '<div class="section-head"><h2>S.C.I.C. — Security Critical Information Center</h2><span class="meta">'+filtered.length+' of '+entries.length+' records · '+(scopeId?mapScopeLabel(scopeId):"all assigned sites")+'</span></div>';
+  var html = '<div class="section-head"><h2>S.C.I.C. — Security Critical Information Center</h2><span class="meta">'+(searched ? filtered.length+' match'+(filtered.length===1?'':'es') : 'Search to view records')+' · '+(scopeId?mapScopeLabel(scopeId):"all assigned sites")+'</span></div>';
   var scicScopePostId = mapScopePostId();
   var scicNewEntryCard = "";
-  if(session.role==="SUPV"){
+  if(isManager()){
     scicNewEntryCard = '<div class="card" style="margin-bottom:16px;"><div style="font-weight:700;margin-bottom:10px;">New Critical Info Entry</div><form id="scicEntryForm">'+
       (scicScopePostId ?
        ('<div class="field"><span class="lbl">Site</span><div class="v">'+escapeHtml(mapScopeLabel(scicScopePostId))+'</div><input type="hidden" name="post" value="'+escapeHtml(scicScopePostId)+'"></div>')
        :
        ('<label class="field"><span class="lbl">Site <span class="req">*</span></span><select name="post" required><option value="">Select site…</option>'+
-        STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+
+        visiblePosts().map(function(p){return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml(p.id+" — "+p.name)+'</option>';}).join("")+
         '</select></label>')
        )+
       '<div class="grid2"><label class="field"><span class="lbl">Vehicle Plate #</span><input type="text" name="plate"></label><label class="field"><span class="lbl">State</span><input type="text" name="plateState" maxlength="2" style="text-transform:uppercase;"></label></div>'+
@@ -1110,13 +1148,14 @@ function renderScic(){
       ["Trespass","Access Control","Parking Violation"].map(function(r){return '<option value="'+r+'"'+(q.reason===r?' selected':'')+'>'+r+'</option>';}).join("")+
     '</select></label>'+
     '<label class="field" id="scicSearchCallWrap" style="'+(q.reason==="Trespass"?"":"display:none;")+'"><span class="lbl">Linked Dispatch Call <span class="req">*</span></span><select name="callId" id="scicSearchCallId"><option value="">Select an active call…</option>'+
-      STATE.calls.filter(function(c){return c.status!=="CLEARED";}).map(function(c){return '<option value="'+c.id+'"'+(String(q.callId||"")===String(c.id)?' selected':'')+'>#'+c.id+' — '+escapeHtml(c.nature||c.code)+'</option>';}).join("")+
+      STATE.calls.filter(function(c){return c.status!=="CLEARED" && visibleToMe(c.post);}).map(function(c){return '<option value="'+c.id+'"'+(String(q.callId||"")===String(c.id)?' selected':'')+'>#'+c.id+' — '+escapeHtml(c.nature||c.code)+'</option>';}).join("")+
     '</select></label>'+
     '</div>'+
     '<div class="small-muted" style="margin-top:6px;">A reason is required for every S.C.I.C. search. Trespass searches must also be linked to an active dispatch call.</div>'+
     '<div style="display:flex;gap:8px;margin-top:8px;"><button type="submit" class="btn sm primary" id="scicSearchBtn" disabled>Search</button><button type="button" class="btn sm" id="scicSearchClear">Clear search</button></div></form>';
   html += '<div class="small-muted" style="margin-bottom:10px;">Combines Trespass Reports and Parking Lot Violations. Restricted to guards and supervisors, scoped to the site(s) you are assigned to — never other sites.</div>';
-  if(!filtered.length){ html += '<div class="empty-state">No matching S.C.I.C. records.</div>'; }
+  if(!searched){ html += '<div class="empty-state">No records are shown until a search is run. Enter a vehicle plate # or a person&#39;s name, select a reason, and press Search.</div>'; }
+  else if(!filtered.length){ html += '<div class="empty-state">No matching S.C.I.C. records.</div>'; }
   else {
     html += '<div class="card"><table class="datatable"><thead><tr><th>Date</th><th>Source</th><th>ID</th><th>Site</th><th>Plate</th><th>Person</th><th>Summary</th><th></th></tr></thead><tbody>'+
       filtered.map(function(e){
@@ -1131,11 +1170,33 @@ function renderScic(){
           '</tr>';
       }).join("")+'</tbody></table></div>';
   }
-if(uiState.openScicId){
+if(uiState.scicDetail && searched){
+    var scicDet = filtered.find(function(e){ return e.id===uiState.scicDetail; });
+    if(scicDet) html += renderScicEntryModal(scicDet);
+  }
+  if(uiState.openScicId){
   var scicOpen = (STATE.scicManual||[]).find(function(m){return m.id===uiState.openScicId;});
   if(scicOpen) html += renderScicModal(scicOpen);
 }
   return html;
+}
+/* Read-only detail for a Parking / Trespass S.C.I.C. hit, for accounts (e.g. Dispatch) that
+   can't open the Parking Lot Violations or Field Reports tab the record lives on. */
+function renderScicEntryModal(e){
+  return '<div class="modal-backdrop" data-close-scic="1"><div class="modal" onclick="event.stopPropagation()">'+
+    '<button class="close" data-action="closeScicModal">✕</button>'+
+    '<div class="rtaid">'+escapeHtml(e.id)+'</div> <span class="pill '+(e.source==="TRESPASS"?"warn":"muted")+'">'+escapeHtml(e.source)+'</span>'+
+    '<h2>'+escapeHtml(e.summary||"S.C.I.C. Record")+'</h2>'+
+    '<div class="kv-grid">'+
+      '<div><div class="k">Date</div><div class="v">'+fmtDT(e.occurred)+'</div></div>'+
+      '<div><div class="k">Site</div><div class="v">'+escapeHtml(e.post||"—")+'</div></div>'+
+      '<div><div class="k">Plate</div><div class="v">'+escapeHtml(e.plate||"—")+' '+escapeHtml(e.plateState||"")+'</div></div>'+
+      '<div><div class="k">Vehicle</div><div class="v">'+escapeHtml(e.vehicleDesc||"—")+'</div></div>'+
+      '<div><div class="k">Person</div><div class="v">'+escapeHtml(e.person||"—")+'</div></div>'+
+    '</div>'+
+    '<div class="field-block"><div class="k">Details</div><div class="v">'+nl2br(e.narrative||"—")+'</div></div>'+
+    (e.photoUrls && e.photoUrls.length? '<div class="field-block"><div class="k">Photos</div><div class="v" style="display:flex;gap:8px;flex-wrap:wrap;">'+e.photoUrls.map(function(u){return '<a href="'+escapeHtml(u)+'" target="_blank" rel="noopener"><img src="'+escapeHtml(u)+'" style="width:90px;height:90px;object-fit:cover;border-radius:6px;border:1px solid hsl(var(--border));"></a>';}).join("")+'</div></div>':'')+
+  '</div></div>';
 }
 function renderScicModal(m){
   return '<div class="modal-backdrop" data-close-scic="1"><div class="modal" onclick="event.stopPropagation()">'+
@@ -1203,7 +1264,7 @@ function computeScicSearchFlags(entries){
   return entries;
 }
 function renderAuditLog(){
-  if(!session || session.role!=="SUPV"){
+  if(!session || !isManager()){
     return '<div class="card"><div class="empty-state">This view is limited to Dispatch, Supervisors, and Admins.</div></div>';
   }
   var raw = computeScicSearchFlags((STATE.scicSearchLog||[]).slice());
@@ -1268,12 +1329,13 @@ function wireScic(){
     var callId = (fd.get("callId")||"").trim();
     if(!reason){ alert("Select a reason for this S.C.I.C. search before continuing."); return; }
     if(reason==="Trespass" && !callId){ alert("Trespass searches must be linked to an active dispatch call."); return; }
+    if(!(fd.get("plate")||"").trim() && !(fd.get("name")||"").trim()){ alert("Enter a vehicle plate # or a person's name to search."); return; }
       uiState.scicSearch = {plate:(fd.get("plate")||"").trim(), name:(fd.get("name")||"").trim(), reason:reason, callId:callId};
       var searchCall = callId ? (STATE.calls||[]).find(function(c){ return String(c.id)===String(callId); }) : null;
       var searchPost = (STATE.posts||[]).find(function(p){ return p.id===session.assignedPostId; });
       var logEntry = {
         id: uid("scicsearch"), createdAt: nowIso(),
-        accountCallsign: session.callsign, accountName: session.name, accountRole: session.role,
+        accountCallsign: session.callsign, accountName: session.name, accountRole: session.viewAsFrom ? session.viewAsFrom+" (viewing as "+session.role+")" : session.role,
         reason: reason, plate: (fd.get("plate")||"").trim(), queryName: (fd.get("name")||"").trim(),
         callId: callId||"", callStartedAt: searchCall?searchCall.createdAt:null,
         post: searchPost?searchPost.name:""
@@ -1288,13 +1350,13 @@ function wireScic(){
     b.addEventListener("click", function(){
       var id=b.getAttribute("data-scic-open"), r=b.getAttribute("data-scic-route"), f=b.getAttribute("data-scic-field");
       uiState[f]=id;
-      if(r==="scic"){ render(); } else { nav(r); }
+      if(r==="scic"){ render(); } else if(canSeeRoute(r)){ uiState.scicDetail=null; nav(r); } else { uiState[f]=null; uiState.scicDetail=id; render(); }
     });
   });
 var scicBd = document.querySelector("[data-close-scic]");
-if(scicBd) scicBd.addEventListener("click", function(){ uiState.openScicId=null; render(); });
+if(scicBd) scicBd.addEventListener("click", function(){ uiState.openScicId=null; uiState.scicDetail=null; render(); });
 var scicCloseBtn = document.querySelector('[data-action="closeScicModal"]');
-if(scicCloseBtn) scicCloseBtn.addEventListener("click", function(){ uiState.openScicId=null; render(); });
+if(scicCloseBtn) scicCloseBtn.addEventListener("click", function(){ uiState.openScicId=null; uiState.scicDetail=null; render(); });
 var entryForm = document.getElementById("scicEntryForm");
 if(entryForm) entryForm.addEventListener("submit", function(e){
   e.preventDefault();

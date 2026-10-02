@@ -24,7 +24,31 @@
    {id:"callhistory", label:"Call History", ic:"▣", supvOnly:true}
    ];
 
- var REPORT_TYPES = [
+ /* ---------------- account types (roles) ----------------
+     ADMIN    - every sidebar tab, every site.
+     SUPV     - Supervisor: every sidebar tab, but only records for the site(s) they're assigned to.
+     DISPATCH - Live Map, Dispatch, S.C.I.C., Call History, Patrol Chat, Users, Radio PTT; every site.
+     GUARD    - Dispatch, Call History, Field Reports, Parking Lot Violations, Guard Notes, Patrol Tours,
+                Users, Radio PTT, Patrol Chat, Truck Log; only records for the site(s) they're assigned to.
+     CLIENT   - Truck Log only, for their one site.
+     The sidebar is built from roleNav(), and renderShell() redirects any other route, so typing a
+     #hash by hand can't open a tab the account isn't allowed to see. */
+  var ROLE_LABELS = {ADMIN:"Admin", SUPV:"Supervisor", DISPATCH:"Dispatch", GUARD:"Guard", CLIENT:"Client"};
+  var ROLE_NAV = {
+    DISPATCH: ["map","dispatch","scic","callhistory","chat","users","radio"],
+    GUARD: ["dispatch","callhistory","reports","parking","guardnotes","tours","users","radio","chat","trucks"],
+    CLIENT: ["trucks"]
+  };
+  function roleNav(role){
+    if(role==="ADMIN" || role==="SUPV") return NAV.map(function(n){ return n.id; });
+    return ROLE_NAV[role] || ROLE_NAV.GUARD;
+  }
+  function canSeeRoute(id){ return !!session && roleNav(session.role).indexOf(id)!==-1; }
+  /* Accounts that manage the board (add units/sites/accounts, review reports, build tours, add
+     S.C.I.C. entries). Which of those screens each one can actually reach is decided by roleNav(). */
+  function isManager(){ return !!session && (session.role==="ADMIN" || session.role==="SUPV" || session.role==="DISPATCH"); }
+
+  var REPORT_TYPES = [
    ["general","General Incident","Anything that needs a written record and does not fit another type."],
    ["injury","Injury / Medical",""],
    ["property","Property Damage",""],
@@ -127,25 +151,32 @@ return f ? f[1] : code;
    return (STATE.unitSites||[]).filter(function(x){return x.callsign===callsign;}).map(function(x){return x.postId;});
  }
 
-  /* Site-scoped visibility for a signed-in GUARD: calls, truck logs, parking violations,
-  guard notes, and field reports should only show records for a site the guard is assigned
-  to. Returns null (no restriction) for supervisors/dispatch, and also fails open (no
-  restriction) for a guard with no assigned sites yet so they are not left seeing nothing
-  before assignments are configured. */
+  /* Every site this account is assigned to: the Assigned Sites (unit_sites) of their own unit(s),
+     matched by unit callsign or the unit's homeCallsign, plus a Supervisor's Assigned site
+     (users.assigned_post_id, set from the Users tab). */
+  function myAssignedSiteIds(){
+    var out = [];
+    function add(p){ if(p && out.indexOf(p)===-1) out.push(p); }
+    guardAssignedSiteIds(session.callsign).forEach(add);
+    (STATE.units||[]).forEach(function(u){ if(u.homeCallsign===session.callsign) guardAssignedSiteIds(u.callsign).forEach(add); });
+    add(session.assignedPostId);
+    return out;
+  }
+
+  /* Site-scoped visibility, applied on every tab. Admin and Dispatch accounts see every site
+     (null = no restriction). Supervisors and Guards only see records for the sites they're
+     assigned to; an account with no assigned sites sees no site records until one is assigned.
+     Client accounts see only their one site. */
   function guardVisiblePostIds(){
     if(!session) return null;
-    if(session.role==="GUARD"){
-      var mine = guardAssignedSiteIds(session.callsign);
-      return mine.length ? mine : null;
-    }
-    if(session.role==="CLIENT"){
-      return session.assignedPostId ? [session.assignedPostId] : [];
-    }
-    return null;
+    if(session.viewAsFrom && (session.role==="SUPV" || session.role==="GUARD")) return session.viewAsPostId ? [session.viewAsPostId] : [];
+    if(session.role==="ADMIN" || session.role==="DISPATCH") return null;
+    if(session.role==="CLIENT") return session.assignedPostId ? [session.assignedPostId] : [];
+    return myAssignedSiteIds();
   }
 
   /* Given a record's stored "post" string (format: "<postId> <post name>"), returns whether
-  the signed-in user is allowed to see it. Always true for supervisors/dispatch. */
+  the signed-in user is allowed to see it. Always true for Admin/Dispatch. */
   function visibleToMe(post){
     var ids = guardVisiblePostIds();
     if(!ids) return true;
@@ -153,12 +184,45 @@ return f ? f[1] : code;
     var pid = post.split(" ")[0];
     return ids.indexOf(pid) !== -1;
   }
+  /* Site-scoping helpers for lists that aren't a single record's "post" string. */
+  function postVisible(postId){ var ids = guardVisiblePostIds(); return !ids || ids.indexOf(postId)!==-1; }
+  function visiblePosts(){ return (STATE.posts||[]).filter(function(p){ return postVisible(p.id); }); }
+  function unitSiteIds(u){ var s = guardAssignedSiteIds(u.callsign).slice(); if(u.post && s.indexOf(u.post)===-1) s.push(u.post); return s; }
+  function unitVisible(u){
+    var ids = guardVisiblePostIds();
+    if(!ids) return true;
+    if(session && (u.callsign===session.callsign || u.homeCallsign===session.callsign)) return true;
+    return unitSiteIds(u).some(function(p){ return ids.indexOf(p)!==-1; });
+  }
+  function userSiteIds(u){
+    var s = [];
+    function add(p){ if(p && s.indexOf(p)===-1) s.push(p); }
+    add(u.assignedPostId);
+    (STATE.units||[]).forEach(function(x){ if(x.callsign===u.callsign || x.homeCallsign===u.callsign) unitSiteIds(x).forEach(add); });
+    return s;
+  }
+  function userVisible(u){
+    var ids = guardVisiblePostIds();
+    if(!ids) return true;
+    if(session && u.callsign===session.callsign) return true;
+    return userSiteIds(u).some(function(p){ return ids.indexOf(p)!==-1; });
+  }
+  /* Activity log entries are free text, so for a site-scoped account an entry is shown only when
+     they made it or it mentions one of their site IDs. */
+  function activityVisible(l){
+    var ids = guardVisiblePostIds();
+    if(!ids) return true;
+    if(session && l.actor===session.callsign) return true;
+    var words = String(l.text||"").split(/[^A-Za-z0-9_-]+/);
+    return ids.some(function(p){ return words.indexOf(p)!==-1; });
+  }
   /* The site a signed-in GUARD is currently working this shift (units[].post for their own
   unit) — used to auto-fill the Post/Site field when they self-initiate a call, report,
   parking violation, or truck log (src/part2.js, src/part3.js). Blank for supervisors/dispatch,
   who may be creating a record on behalf of a guard at a different site. */
  function mySitePostId(){
-   if(!session) return "";
+    if(!session) return "";
+    if(session.viewAsFrom) return session.viewAsPostId || "";
    if(session.role==="GUARD"){
      var u = currentUnit();
      return u ? (u.post||"") : "";
@@ -285,11 +349,11 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
      wireLogin();
      return;
    }
-   if(session.role==="CLIENT" && route!=="trucks"){ route = "trucks"; location.hash = "#trucks"; }
-   var openCalls = STATE.calls.filter(function(c){ return c.status!=="CLEARED"; }).length;
-   var pending = STATE.calls.filter(function(c){ return c.status==="PENDING"; }).length;
-   var onDuty = STATE.units.filter(function(u){ return (u.status!=="OFFDUTY"&&u.status!=="ENDSHIFT"); });
-   var avail = STATE.units.filter(function(u){ return u.status==="AVAILABLE"; });
+   if(!canSeeRoute(route)){ route = canSeeRoute("dispatch") ? "dispatch" : roleNav(session.role)[0]; location.hash = "#"+route; }
+   var openCalls = STATE.calls.filter(function(c){ return c.status!=="CLEARED" && visibleToMe(c.post); }).length;
+   var pending = STATE.calls.filter(function(c){ return c.status==="PENDING" && visibleToMe(c.post); }).length;
+   var onDuty = STATE.units.filter(function(u){ return unitVisible(u) && (u.status!=="OFFDUTY"&&u.status!=="ENDSHIFT"); });
+   var avail = STATE.units.filter(function(u){ return unitVisible(u) && u.status==="AVAILABLE"; });
    var statsHtml = session.role==="CLIENT" ? '' : ('<div class="stats">'+
     '<div class="stat"><div class="n">'+openCalls+'</div><div class="l">Open</div></div>'+
     '<div class="stat"><div class="n">'+pending+'</div><div class="l">Pending</div></div>'+
@@ -299,14 +363,15 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
   root.innerHTML =
     '<div id="sidebarBackdrop" class="'+(uiState.sidebarOpen?"show":"")+'"></div>'+'<div id="sidebar" class="'+(uiState.sidebarOpen?"open":"")+'">'+
     '<div class="brand"><div class="mark">R</div><div><div class="name">Ridgecrest CAD</div><div class="sub">Dispatch Console</div></div></div>'+
-    '<ul id="navlist">'+ NAV.filter(function(n){ return session.role==="CLIENT" ? n.id==="trucks" : (!n.supvOnly || session.role==="SUPV"); }).map(function(n){
+    '<ul id="navlist">'+ NAV.filter(function(n){ return canSeeRoute(n.id); }).map(function(n){
       return '<li><button data-nav="'+n.id+'" class="'+(route===n.id?"active":"")+'"><span class="ic">'+n.ic+'</span>'+escapeHtml(n.label)+'</button></li>';
     }).join("") +'</ul>'+
     '<div class="foot">'+
     '<label>Signed In</label>'+
-    '<div class="signedinbox"><div class="who"><div><div class="name">'+escapeHtml(session.name)+'</div><div class="cs">'+escapeHtml(session.callsign)+' <span class="badge-role">'+escapeHtml(session.role)+'</span></div></div></div>'+
+    '<div class="signedinbox"><div class="who"><div><div class="name">'+escapeHtml(session.name)+'</div><div class="cs">'+escapeHtml(session.callsign)+' <span class="badge-role">'+escapeHtml(ROLE_LABELS[session.role]||session.role)+'</span></div></div></div>'+
     '<button class="signout" data-action="signout">Sign out</button></div>'+
-    '<label>Console ID</label>'+
+    renderViewAs()+
+      '<label>Console ID</label>'+
     '<div class="consoleid"><input type="text" value="'+escapeHtml(session.callsign)+'" readonly></div>'+
     (session.role==="GUARD" ? renderMySitePicker() : '')+
     '<div class="synced">'+(DB && DB.configured ? "● Synced" : "● Not connected — changes stay on this device only")+'</div>'+
@@ -456,7 +521,47 @@ function wireLogin(){
     render();
   }
  }
-function wireGlobal(){
+/* Admin "View as": lets an Admin preview the CAD as a Supervisor, Dispatch or Guard account
+     (sidebar tabs and site scoping) for this sign-in only, to run checks. The account's real type
+     in the database never changes; session.viewAsFrom holds it while previewing, and Supervisor /
+     Guard previews are scoped to the one site picked in session.viewAsPostId. */
+  var VIEW_AS_OPTS = [["ADMIN","Admin (my account)"],["SUPV","Supervisor"],["DISPATCH","Dispatch"],["GUARD","Guard"]];
+  function renderViewAs(){
+    var real = session.viewAsFrom || session.role;
+    if(real!=="ADMIN") return "";
+    var cur = session.viewAsFrom ? session.role : "ADMIN";
+    var needsSite = cur==="SUPV" || cur==="GUARD";
+    return '<label>View As (checks)</label>'+
+      '<div class="consoleid"><select id="viewAsSel" style="width:100%;">'+
+      VIEW_AS_OPTS.map(function(o){ return '<option value="'+o[0]+'" '+(cur===o[0]?"selected":"")+'>'+escapeHtml(o[1])+'</option>'; }).join("")+
+      '</select></div>'+
+      (needsSite ? '<div class="consoleid"><select id="viewAsSiteSel" style="width:100%;"><option value="">Pick a site to view as</option>'+
+        STATE.posts.map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(session.viewAsPostId===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
+        '</select></div>' : '')+
+      (session.viewAsFrom ? '<div class="small-muted" style="margin:-4px 0 10px;">Previewing as '+escapeHtml(ROLE_LABELS[cur]||cur)+'. Your account is still Admin.</div>' : '');
+  }
+  function wireViewAs(){
+    var sel = document.getElementById("viewAsSel");
+    if(sel) sel.addEventListener("change", function(){
+      if((session.viewAsFrom || session.role)!=="ADMIN") return;
+      var v = sel.value;
+      if(v==="ADMIN"){ session.role = "ADMIN"; delete session.viewAsFrom; delete session.viewAsPostId; }
+      else { session.viewAsFrom = "ADMIN"; session.role = v; if(v==="DISPATCH") delete session.viewAsPostId; }
+      sessionStorage.setItem("cad_session", JSON.stringify(session));
+      logActivity("AUTH", session.callsign, session.name+(session.viewAsFrom ? " started viewing the CAD as "+(ROLE_LABELS[v]||v) : " returned to their Admin view"));
+      render();
+    });
+    var siteSel = document.getElementById("viewAsSiteSel");
+    if(siteSel) siteSel.addEventListener("change", function(){
+      if(!session.viewAsFrom) return;
+      session.viewAsPostId = siteSel.value;
+      sessionStorage.setItem("cad_session", JSON.stringify(session));
+      render();
+    });
+  }
+
+  function wireGlobal(){
+    wireViewAs();
    document.querySelectorAll("[data-nav]").forEach(function(b){
      b.addEventListener("click", function(){ uiState.sidebarOpen=false; nav(b.getAttribute("data-nav")); });
    });
@@ -597,8 +702,9 @@ function wireGlobal(){
                               if(session){
                                 var me = STATE.users.find(function(u){ return u.callsign===session.callsign; });
                                 if(me){
-                                  var changed = session.role!==me.role || session.name!==me.name || session.assignedPostId!==(me.assignedPostId||"");
-                                  session.role = me.role; session.name = me.name; session.assignedPostId = me.assignedPostId||"";
+                                  if(session.viewAsFrom && me.role!=="ADMIN"){ session.role = session.viewAsFrom; delete session.viewAsFrom; delete session.viewAsPostId; }
+          var changed = (session.viewAsFrom||session.role)!==me.role || session.name!==me.name || session.assignedPostId!==(me.assignedPostId||"");
+          if(session.viewAsFrom) session.viewAsFrom = me.role; else session.role = me.role; session.name = me.name; session.assignedPostId = me.assignedPostId||"";
                                   if(changed) sessionStorage.setItem("cad_session", JSON.stringify(session));
                                 }
                               }

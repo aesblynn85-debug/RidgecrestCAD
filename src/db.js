@@ -278,6 +278,8 @@ re-publishing the entire app state on every change. */
    async function setUserActive(callsign, active){ must(); chk(await sb.rpc("set_user_active", {p_callsign:callsign, p_active:active})); }
    /* postId "" means "every site" (Dispatch/Admin) — stored as null so the assigned_post_id FK stays happy. */
  async function setAssignedPost(callsign, postId){ must(); chk(await sb.rpc("set_assigned_post", {p_callsign:callsign, p_post_id:postId||null})); }
+  /* Account type: GUARD / DISPATCH / SUPV / ADMIN (see ROLE_NAV in app.js). Needs set_user_role from supabase/migrations/20261002_account_types.sql. */
+  async function setUserRole(callsign, role){ must(); chk(await sb.rpc("set_user_role", {p_callsign:callsign, p_role:role})); }
 
  /* ---------- generic row writers ---------- */
  async function insertRow(table, row){ must(); chk(await sb.from(table).insert(row)); }
@@ -298,7 +300,7 @@ re-publishing the entire app state on every change. */
       configured: CONFIGURED,
       loadAllState: loadAllState,
       auth: {verifyPin:verifyPin, setPin:setPin, createGuard:createGuard, createClient:createClient, resetPin:resetPin, recordSignIn:recordSignIn,
-                 setUserActive:setUserActive, setAssignedPost:setAssignedPost},
+                 setUserActive:setUserActive, setAssignedPost:setAssignedPost, setUserRole:setUserRole},
       counters: {next:nextCounter},
       calls: {
              insert: function(c){ return insertRow("calls", callToRow(c)); },
