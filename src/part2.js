@@ -15,7 +15,7 @@ html += '<div class="card"><div class="section-head"><h2>New Call Intake</h2><sp
   [1,2,3,4].map(function(p){ return '<button type="button" data-p="'+p+'" class="'+(p===3?"active":"")+'">P'+p+'</button>'; }).join("")+
   '</div></label>'+
   '<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">Select post…</option>'+
-  STATE.posts.map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
+  visiblePosts().map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
   '</select></label>'+
   '<label class="field"><span class="lbl">Exact Location</span><input type="text" name="location" placeholder="Floor, zone, door, lot…"></label>'+
   '<div class="grid2"><label class="field"><span class="lbl">Reporting Party</span><input type="text" name="rp" placeholder="Name"></label>'+
@@ -42,9 +42,9 @@ html += '<div class="card"><div class="section-head"><h2>New Call Intake</h2><sp
   html += '</div>';
 
 // Unit status
-html += '<div class="card"><div class="section-head"><h2>Unit Status</h2><span class="meta">'+STATE.units.filter(function(u){return (u.status!=="OFFDUTY"&&u.status!=="ENDSHIFT");}).length+' on duty</span></div>';
+html += '<div class="card"><div class="section-head"><h2>Unit Status</h2><span class="meta">'+STATE.units.filter(function(u){return unitVisible(u) && (u.status!=="OFFDUTY"&&u.status!=="ENDSHIFT");}).length+' on duty</span></div>';
   C.UNIT_STATUSES.map(function(s){return s[0];}).forEach(function(st){
-var us = STATE.units.filter(function(u){ return u.status===st; });
+var us = STATE.units.filter(function(u){ return u.status===st && unitVisible(u); });
 if(!us.length) return;
 html += '<div class="small-muted" style="margin:10px 0 4px;text-transform:uppercase;letter-spacing:.05em;">'+escapeHtml(C.unitStatusLabel(st))+' ('+us.length+')</div>';
 html += us.map(function(u){
@@ -57,7 +57,7 @@ C.UNIT_STATUSES.map(function(s){ return '<option value="'+s[0]+'" '+(s[0]===u.st
 });
 
 html += '<div class="small-muted" style="margin:14px 0 6px;text-transform:uppercase;letter-spacing:.05em;">Live Log</div><div style="max-height:260px;overflow-y:auto;">';
-  html += STATE.activityLog.slice(0,12).map(function(l){
+  html += STATE.activityLog.filter(activityVisible).slice(0,12).map(function(l){
     return '<div style="padding:5px 0;border-bottom:1px solid hsl(var(--border)/.4);font-size:11px;"><span class="small-muted">'+fmtShort(l.at)+'</span> '+escapeHtml(l.text)+'</div>';
   }).join("");
   html += '</div></div>';
@@ -75,7 +75,7 @@ function renderCallModal(c){
   var C=window.__CAD;
   var narr = (c.narrativeSupplements||[]).map(function(n){ return '<div style="margin-bottom:6px;"><span class="small-muted">'+fmtShort(n.at)+' '+escapeHtml(n.by)+':</span> '+escapeHtml(n.text)+'</div>'; }).join("") || '<div class="small-muted">No supplements yet.</div>';
   var assigned = c.assignedUnits || [];
-  var availUnits = STATE.units.filter(function(u){ return u.status==="AVAILABLE"; });
+  var availUnits = STATE.units.filter(function(u){ return u.status==="AVAILABLE" && unitVisible(u); });
   var unitsHtml = assigned.length ? assigned.map(function(cs){
     var u = STATE.units.find(function(x){return x.callsign===cs;});
     var st = u ? u.status : "?";
@@ -251,11 +251,12 @@ function renderCallHistory(){
   var C = window.__CAD;
   var filter = uiState.callHistoryFilter || "ALL";
   var list = STATE.calls.filter(function(c){
+    if(!visibleToMe(c.post)) return false;
     if(filter==="ACTIVE") return c.status!=="CLEARED";
     if(filter==="CLEARED") return c.status==="CLEARED";
     return true;
   }).sort(function(a,b){ return new Date(b.createdAt)-new Date(a.createdAt); });
-  var html = '<div class="card"><div class="section-head"><h2>Call History</h2><span class="meta">'+list.length+' of '+STATE.calls.length+'</span></div>'+
+  var html = '<div class="card"><div class="section-head"><h2>Call History</h2><span class="meta">'+list.length+' of '+STATE.calls.filter(function(c){ return visibleToMe(c.post); }).length+'</span></div>'+
     '<div class="priobtns" id="callHistFilter" style="margin-bottom:10px;">'+
     [["ALL","All"],["ACTIVE","Active"],["CLEARED","Cleared"]].map(function(f){ return '<button type="button" data-f="'+f[0]+'" class="'+(filter===f[0]?"active":"")+'">'+f[1]+'</button>'; }).join("")+
     '</div>';
@@ -288,14 +289,14 @@ function wireCallHistory(){
 /* ---------------- UNITS ---------------- */
 function renderUnits(){
   var C = window.__CAD;
-  var onDuty = STATE.units.filter(function(u){return (u.status!=="OFFDUTY"&&u.status!=="ENDSHIFT");}).length;
+  var onDuty = STATE.units.filter(function(u){return unitVisible(u) && (u.status!=="OFFDUTY"&&u.status!=="ENDSHIFT");}).length;
   var html = '<div class="card"><div class="section-head"><h2>Guard &amp; Unit Roster</h2><span class="meta">'+onDuty+' on duty / '+STATE.units.length+' total</span></div>'+
-    (session.role==="SUPV" ? '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn sm primary" data-action="addUnit">+ Add unit</button></div>' : '')+
+    (isManager() ? '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn sm primary" data-action="addUnit">+ Add unit</button></div>' : '')+
     '<div class="small-muted" style="margin-bottom:8px;">Assigned Sites is the pool of sites a guard can work — ctrl/cmd-click to select more than one. Post is the ONE site they are on for the current shift; it also auto-fills the Post/Site field when they self-initiate a call, report, parking violation, or truck log. Guards can set their own Post from the "My Site" picker in their sidebar.</div>'+
     '<table class="datatable"><thead><tr><th>Callsign</th><th>Guard</th><th>Type</th><th>Status</th><th>Since</th><th>Assigned Sites</th><th>Post (this shift)</th><th>Shift</th><th></th></tr></thead><tbody>'+
-    STATE.units.map(function(u){
+    STATE.units.filter(unitVisible).map(function(u){
       var assigned = (STATE.unitSites||[]).filter(function(x){return x.callsign===u.callsign;}).map(function(x){return x.postId;});
-      var postOptions = assigned.length ? STATE.posts.filter(function(p){return assigned.indexOf(p.id)!==-1;}) : STATE.posts;
+      var postOptions = assigned.length ? STATE.posts.filter(function(p){return assigned.indexOf(p.id)!==-1;}) : visiblePosts();
       return '<tr><td class="mono">'+escapeHtml(u.callsign)+'</td><td>'+escapeHtml(u.name)+'</td>'+
         '<td><select class="unitTypeSel" data-unit="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:12px;padding:4px 6px;">'+
         C.UNIT_TYPES.map(function(t){ return '<option value="'+escapeHtml(t)+'" '+(t===u.type?"selected":"")+'>'+escapeHtml(t)+'</option>'; }).join("")+
@@ -305,7 +306,7 @@ function renderUnits(){
         '<td class="mono small-muted">'+fmtAgo(u.statusSince)+'</td>'+
 
         '<td><select multiple class="unitSitesSel" data-unit="'+escapeHtml(u.callsign)+'" size="'+Math.min(4, Math.max(2, STATE.posts.length))+'" style="min-width:150px;font-size:12px;">'+
-        STATE.posts.map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(assigned.indexOf(p.id)!==-1?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
+        visiblePosts().map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(assigned.indexOf(p.id)!==-1?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name)+'</option>'; }).join("")+
         '</select></td>'+
         '<td><select class="unitPostSel" data-unit="'+escapeHtml(u.callsign)+'" style="width:auto;font-size:12px;padding:4px 6px;">'+
         '<option value="">— none —</option>'+
@@ -313,7 +314,7 @@ function renderUnits(){
         (u.post && !postOptions.some(function(p){return p.id===u.post;}) ? '<option value="'+escapeHtml(u.post)+'" selected>'+escapeHtml(u.post)+'</option>' : '')+
         '</select></td>'+
         '<td>'+escapeHtml(u.shift||"—")+'</td>'+
-        (session.role==="SUPV" ? '<td><button class="btn sm ghost" data-remove-unit="'+escapeHtml(u.callsign)+'">Remove</button></td>' : '<td></td>')+'</tr>';
+        (isManager() ? '<td><button class="btn sm ghost" data-remove-unit="'+escapeHtml(u.callsign)+'">Remove</button></td>' : '<td></td>')+'</tr>';
     }).join("") + '</tbody></table></div>';
   return html;
 }
@@ -387,18 +388,18 @@ document.querySelectorAll("[data-remove-unit]").forEach(function(b){
 // view is the site directory, plus creating/removing sites themselves (added — previously this
 // was a read-only list with no way to add a new site to the directory).
 function renderSites(){
-  var html = '<div class="card"><div class="section-head"><h2>Site Directory</h2><span class="meta">'+STATE.posts.length+' sites</span></div>'+
-    (session.role==="SUPV" ? '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn sm primary" data-action="addSite">+ Add site</button></div>' : '');
-  if(!STATE.posts.length){
+  var html = '<div class="card"><div class="section-head"><h2>Site Directory</h2><span class="meta">'+visiblePosts().length+' sites</span></div>'+
+    (isManager() ? '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn sm primary" data-action="addSite">+ Add site</button></div>' : '');
+  if(!visiblePosts().length){
     html += '<div class="empty-state">No sites yet. Use "+ Add site" above to create the first one.</div>';
   } else {
-    html += STATE.posts.map(function(p){
+    html += visiblePosts().map(function(p){
       var tourCount = (STATE.patrolTours||[]).filter(function(t){return t.postId===p.id && t.active;}).length;
       return '<div class="list-item">'+
         '<div class="top"><span><b>'+escapeHtml(p.id)+'</b> — '+escapeHtml(p.name)+'</span><span class="pill blue">'+escapeHtml(p.kind)+'</span></div>'+
         '<div class="meta">'+escapeHtml(p.org)+' · '+escapeHtml(p.address||"No address on file")+'</div>'+
         '<div class="small-muted" style="margin-top:4px;">'+tourCount+' active patrol tour'+(tourCount===1?"":"s")+' — see Patrol Tours</div>'+
-        (session.role==="SUPV" ? '<div style="margin-top:8px;"><button class="btn sm ghost" data-remove-site="'+escapeHtml(p.id)+'">Remove site</button></div>' : '')+
+        (isManager() ? '<div style="margin-top:8px;"><button class="btn sm ghost" data-remove-site="'+escapeHtml(p.id)+'">Remove site</button></div>' : '')+
         '</div>';
     }).join("");
   }
@@ -451,7 +452,7 @@ function renderChat(){
   var ch = STATE.chat.channels.find(function(c){return c.id===uiState.chatChannel;}) || STATE.chat.channels[0];
   var msgs = STATE.chat.messages.filter(function(m){return m.channel===ch.id;});
   var activeBolo = STATE.chat.messages.filter(function(m){return m.bolo;}).length;
-  var onDuty = STATE.units.filter(function(u){return (u.status!=="OFFDUTY"&&u.status!=="ENDSHIFT");});
+  var onDuty = STATE.units.filter(function(u){return unitVisible(u) && (u.status!=="OFFDUTY"&&u.status!=="ENDSHIFT");});
   var html = '<div class="section-head"><h2>Patrol Chat</h2><span class="meta">'+onDuty.length+' on duty · '+STATE.chat.channels.length+' channels'+(activeBolo?' · <span style="color:hsl(var(--destructive));">⚠ '+activeBolo+' active BOLO</span>':'')+'</span></div>';
   html += '<div class="two-col">';
   html += '<div class="card"><div class="small-muted" style="margin-bottom:6px;text-transform:uppercase;">Channels</div>'+
@@ -746,7 +747,7 @@ function renderTrucks(){
     '<label class="field"><span class="lbl">Driver Name <span class="req">*</span></span><input type="text" name="driver" required></label>'+
     '<div class="grid2"><label class="field"><span class="lbl">Trailer # <span class="req">*</span></span><input type="text" name="trailer" required></label>'+
     '<label class="field"><span class="lbl">Tractor #</span><input type="text" name="tractor"></label></div>'+
-    (session.role==="CLIENT" ? ('<label class="field"><span class="lbl">Site</span><input type="text" value="'+escapeHtml((function(){var p=STATE.posts.find(function(x){return x.id===mySitePostId();}); return p?(p.id+" \u2014 "+p.name):"No site assigned";})())+'" readonly><input type="hidden" name="post" value="'+escapeHtml(mySitePostId())+'"></label>') : ('<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+STATE.posts.map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" \u2014 "+p.name)+'</option>';}).join("")+'</select></label>'))+
+    (session.role==="CLIENT" ? ('<label class="field"><span class="lbl">Site</span><input type="text" value="'+escapeHtml((function(){var p=STATE.posts.find(function(x){return x.id===mySitePostId();}); return p?(p.id+" \u2014 "+p.name):"No site assigned";})())+'" readonly><input type="hidden" name="post" value="'+escapeHtml(mySitePostId())+'"></label>') : ('<label class="field"><span class="lbl">Post / Site</span><select name="post"><option value="">No post specified</option>'+visiblePosts().map(function(p){return '<option value="'+escapeHtml(p.id)+'" '+(mySitePostId()===p.id?"selected":"")+'>'+escapeHtml(p.id+" \u2014 "+p.name)+'</option>';}).join("")+'</select></label>'))+
     '<label class="field"><span class="lbl">Purpose</span><select name="purpose"><option>Delivery</option><option>Pickup</option><option>Service</option><option>Other</option></select></label>'+
     '<div class="grid2"><label class="field"><span class="lbl">Dock / Door'+(session.role==="CLIENT"?' <span class="req">*</span>':'')+'</span><input type="text" name="dock"'+(session.role==="CLIENT"?' required':'')+'></label><label class="field"><span class="lbl">Seal #'+(session.role==="CLIENT"?' <span class="req">*</span>':'')+'</span><input type="text" name="seal"'+(session.role==="CLIENT"?' required':'')+'></label></div>'+
     '<label class="field"><span class="lbl">BOL / PO #'+(session.role==="CLIENT"?' <span class="req">*</span>':'')+'</span><input type="text" name="bol"'+(session.role==="CLIENT"?' required':'')+'></label>'+
