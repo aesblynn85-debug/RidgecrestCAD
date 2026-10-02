@@ -745,6 +745,40 @@ function scopedGuardLocations(){
   return locs.filter(function(l){ return atSite[l.callsign]; });
 }
 
+/* Site picker (Admin / Dispatch): jumps the Live Map to a site's street address. Addresses come
+   from the Sites tab (posts.address) and are turned into coordinates with OpenStreetMap's free
+   Nominatim geocoder the first time a site is picked, then cached in this browser so each site
+   is only looked up once (re-looked-up automatically if its address is edited). */
+var SITE_GEO_KEY = "cad_site_geo_v1";
+var siteGeoCache = {};
+try{ siteGeoCache = JSON.parse(localStorage.getItem(SITE_GEO_KEY) || "{}") || {}; }catch(e){ siteGeoCache = {}; }
+function geocodeSite(p){
+  var addr = (p.address||"").trim();
+  var cached = siteGeoCache[p.id];
+  if(cached && cached.address===addr) return Promise.resolve(cached);
+  if(!addr) return Promise.reject(new Error("Site "+p.id+" has no address saved. Add one on the Sites tab."));
+  return fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&q="+encodeURIComponent(addr), {headers:{"Accept":"application/json"}})
+    .then(function(r){ if(!r.ok) throw new Error("Address lookup failed ("+r.status+")."); return r.json(); })
+    .then(function(rows){
+      if(!rows || !rows.length) throw new Error("Couldn't find "+addr+" on the map. Check the address on the Sites tab.");
+      var g = {lat:+rows[0].lat, lng:+rows[0].lon, address:addr};
+      siteGeoCache[p.id] = g;
+      try{ localStorage.setItem(SITE_GEO_KEY, JSON.stringify(siteGeoCache)); }catch(e){}
+      return g;
+    });
+}
+function renderMapSitePicker(){
+  if(!session || (session.role!=="ADMIN" && session.role!=="DISPATCH")) return "";
+  var cur = uiState.mapSite || "";
+  var curPost = cur ? STATE.posts.find(function(p){ return p.id===cur; }) : null;
+  return '<div class="card" style="margin-bottom:16px;"><label class="field" style="margin:0;"><span class="lbl">Go to site</span>'+
+    '<select id="mapSiteSel"><option value="">All guards (fit map to everyone)</option>'+
+    visiblePosts().map(function(p){ return '<option value="'+escapeHtml(p.id)+'" '+(cur===p.id?"selected":"")+'>'+escapeHtml(p.id+" — "+p.name+(p.address?" · "+p.address:" · (no address)"))+'</option>'; }).join("")+
+    '</select></label>'+
+    (curPost ? '<div class="small-muted" style="margin-top:6px;">'+escapeHtml(curPost.address||"No address saved for this site.")+'</div>' : '')+
+    '</div>';
+}
+
 function renderMap(){
   if(!session || !isManager()){
     return '<div class="card"><div class="empty-state">This view is limited to Dispatch, Supervisors, and Admins.</div></div>';
@@ -753,8 +787,9 @@ function renderMap(){
   var postId = scopeIds ? (scopeIds.join(",") || "none") : "";
   var scopeLabel = !scopeIds ? "All Sites" : scopeIds.length===1 ? mapScopeLabel(scopeIds[0]) : scopeIds.length ? scopeIds.length+" assigned sites" : "No assigned sites";
   var locs = scopedGuardLocations();
-  var trailCs = uiState.mapTrailFor||"";
+  var followCs = uiState.mapFollow||"";
   var html = '<div class="section-head"><h2>Live Guard Map</h2><span class="meta">'+locs.length+' reporting · '+escapeHtml(scopeLabel)+'</span></div>';
+  html += renderMapSitePicker();
   html += '<div class="two-col">';
   html += '<div class="card"><div style="font-weight:700;">On the Map</div>'+
     '<div class="small-muted" style="margin-bottom:10px;">'+(postId ? 'Scoped to '+escapeHtml(scopeLabel)+' — set from the Users tab.' : 'All sites — Dispatch/Admin view.')+'</div>';
@@ -765,10 +800,10 @@ function renderMap(){
       var stale = (Date.now()-new Date(l.updatedAt).getTime()) > 5*60000;
       return '<div class="checkbox-row" style="justify-content:space-between;">'+
         '<div><div>'+escapeHtml(l.callsign)+'</div><div class="small-muted">updated '+fmtAgo(l.updatedAt)+(stale?' <span class="overdue-badge">STALE</span>':'')+'</div></div>'+
-        '<button class="btn sm '+(trailCs===l.callsign?"primary":"")+'" data-map-trail="'+escapeHtml(l.callsign)+'">'+(trailCs===l.callsign?"Hide trail":"Show trail")+'</button></div>';
+        '<button class="btn sm '+(followCs===l.callsign?"primary":"")+'" data-map-follow="'+escapeHtml(l.callsign)+'">'+(followCs===l.callsign?"Unlock":"Show location")+'</button></div>';
     }).join("");
   }
-  html += '<div class="small-muted" style="margin-top:12px;">Positions refresh roughly every 45 seconds while a guard is signed in on their device. "Show trail" overlays today\'s checkpoint-scan path for that guard.</div>';
+  html += '<div class="small-muted" style="margin-top:12px;">Positions refresh roughly every 45 seconds while a guard is signed in on their device. "Show location" locks the map onto that guard\'s dot and keeps it centered as their position updates; press Unlock to release it.</div>';
   html += '</div>';
   html += '<div class="card" style="padding:0;overflow:hidden;"><div id="liveMap" style="height:640px;width:100%;"></div></div>';
   html += '</div>';
@@ -777,10 +812,29 @@ function renderMap(){
 
 function wireMap(){
   if(!session || !isManager()) return;
-  document.querySelectorAll("[data-map-trail]").forEach(function(b){
+  var mapSiteSel = document.getElementById("mapSiteSel");
+  if(mapSiteSel) mapSiteSel.addEventListener("change", function(){
+    var id = mapSiteSel.value;
+    uiState.mapSite = id;
+    uiState.mapFollow = "";
+    if(!id){ _liveMapView = null; render(); return; }
+    var p = STATE.posts.find(function(x){ return x.id===id; });
+    if(!p) return;
+    mapSiteSel.disabled = true;
+    geocodeSite(p).then(function(g){
+      _liveMapView = {center:[g.lat, g.lng], zoom:17};
+      render();
+    }).catch(function(e){
+      toast(e.message || String(e));
+      uiState.mapSite = "";
+      render();
+    });
+  });
+  document.querySelectorAll("[data-map-follow]").forEach(function(b){
     b.addEventListener("click", function(){
-      var cs = b.getAttribute("data-map-trail");
-      uiState.mapTrailFor = (uiState.mapTrailFor===cs) ? "" : cs;
+      var cs = b.getAttribute("data-map-follow");
+      uiState.mapFollow = (uiState.mapFollow===cs) ? "" : cs;
+      if(uiState.mapFollow) uiState.mapSite = "";
       render();
     });
   });
@@ -791,12 +845,14 @@ function wireMap(){
     maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(map);
   var pts = [];
+  var followMarker = null;
   scopedGuardLocations().forEach(function(l){
     if(l.lat==null || l.lng==null) return;
     var stale = (Date.now()-new Date(l.updatedAt).getTime()) > 5*60000;
     var marker = L.circleMarker([l.lat,l.lng], {radius:8, color: stale?"#8a8f98":"#3fa9f5", fillColor: stale?"#8a8f98":"#3fa9f5", fillOpacity:.85, weight:2});
     marker.bindPopup("<b>"+escapeHtml(l.callsign)+"</b><br>Updated "+fmtAgo(l.updatedAt)+(l.accuracy?"<br>±"+Math.round(l.accuracy)+"m":""));
     marker.addTo(map);
+    if(l.callsign===uiState.mapFollow){ followMarker = marker; marker.setStyle({radius:12, weight:3}); }
     pts.push([l.lat,l.lng]);
   });
   if(uiState.mapTrailFor){
@@ -812,7 +868,19 @@ function wireMap(){
       .bindPopup("Last scan — "+escapeHtml(uiState.mapTrailFor)+"<br>"+fmtShort(last.at));
     }
   }
-  if(_liveMapView){ map.setView(_liveMapView.center, _liveMapView.zoom); }
+  var mapSitePost = uiState.mapSite ? STATE.posts.find(function(p){ return p.id===uiState.mapSite; }) : null;
+  var siteGeo = mapSitePost ? siteGeoCache[mapSitePost.id] : null;
+  if(siteGeo){
+    L.circleMarker([siteGeo.lat, siteGeo.lng], {radius:14, color:"#2ecc71", fillColor:"#2ecc71", fillOpacity:.2, weight:2}).addTo(map)
+      .bindPopup("<b>"+escapeHtml(mapSitePost.id+" — "+mapSitePost.name)+"</b><br>"+escapeHtml(mapSitePost.address||""));
+  }
+  var followLoc = uiState.mapFollow ? scopedGuardLocations().find(function(l){ return l.callsign===uiState.mapFollow && l.lat!=null && l.lng!=null; }) : null;
+  if(followLoc){
+    // Locked on a guard: re-center on their dot on every refresh, keeping the zoom if it's already close in.
+    map.setView([followLoc.lat, followLoc.lng], (_liveMapView && _liveMapView.zoom>=15) ? _liveMapView.zoom : 17);
+    if(followMarker) followMarker.openPopup();
+  }
+  else if(_liveMapView){ map.setView(_liveMapView.center, _liveMapView.zoom); }
   else if(pts.length){ map.fitBounds(pts, {padding:[30,30], maxZoom:16}); }
   else { map.setView(DEFAULT_MAP_CENTER, 10); }
   map.on("moveend", function(){ _liveMapView = {center: map.getCenter(), zoom: map.getZoom()}; });
