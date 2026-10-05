@@ -8,8 +8,9 @@
    {id:"units", label:"Units", ic:"▤"},
    {id:"sites", label:"Sites", ic:"◇"},
    {id:"tours", label:"Patrol Tours", ic:"⚑"},
-   {id:"chat", label:"Patrol Chat", ic:"✇"},
    {id:"radio", label:"Radio PTT", ic:"▶"},
+   // Supervisor/Admin/Dispatch only (ROLE_NAV below) — renderTranscripts() also refuses anyone else.
+   {id:"transcripts", label:"Dispatch Transcripts", ic:"✇", supvOnly:true},
    {id:"trucks", label:"Truck Log", ic:"▢"},
    {id:"parking", label:"Parking Lot Violations", ic:"⚠"},
    {id:"reports", label:"Field Reports", ic:"☷"},
@@ -27,16 +28,17 @@
  /* ---------------- account types (roles) ----------------
      ADMIN    - every sidebar tab, every site.
      SUPV     - Supervisor: every sidebar tab, but only records for the site(s) they're assigned to.
-     DISPATCH - Live Map, Dispatch, S.C.I.C., Call History, Patrol Chat, Users, Radio PTT; every site.
+     DISPATCH - Live Map, Dispatch, S.C.I.C., Call History, Dispatch Transcripts, Users, Radio PTT; every site.
      GUARD    - Dispatch, Call History, Field Reports, Parking Lot Violations, Guard Notes, Patrol Tours,
-                Users, Radio PTT, Patrol Chat, Truck Log; only records for the site(s) they're assigned to.
+                S.C.I.C., Users, Radio PTT, Truck Log; only records for the site(s) they're assigned to.
+                (No Dispatch Transcripts — that's Supervisor/Admin/Dispatch only.)
      CLIENT   - Truck Log only, for their one site.
      The sidebar is built from roleNav(), and renderShell() redirects any other route, so typing a
      #hash by hand can't open a tab the account isn't allowed to see. */
   var ROLE_LABELS = {ADMIN:"Admin", SUPV:"Supervisor", DISPATCH:"Dispatch", GUARD:"Guard", CLIENT:"Client"};
   var ROLE_NAV = {
-    DISPATCH: ["map","dispatch","scic","callhistory","chat","users","radio"],
-    GUARD: ["dispatch","callhistory","reports","parking","guardnotes","tours","users","radio","chat","trucks"],
+    DISPATCH: ["map","dispatch","scic","callhistory","transcripts","users","radio"],
+    GUARD: ["dispatch","callhistory","reports","parking","guardnotes","tours","scic","users","radio","trucks"],
     CLIENT: ["trucks"]
   };
   function roleNav(role){
@@ -108,7 +110,7 @@ return f ? f[1] : code;
  var route = (location.hash || "#dispatch").replace("#","");
   var session = null; // {callsign,name,role}
  try { session = JSON.parse(sessionStorage.getItem("cad_session")||"null"); } catch(e){}
-  var uiState = { chatChannel:"all-hands", reportsTab:"incident", reportsFilter:"all", loginErr:"", pendingPin:"", selectedReport:null, consoleUnit: (session && session.defaultUnit) || "", sidebarOpen:false };
+  var uiState = { reportsTab:"incident", reportsFilter:"all", loginErr:"", pendingPin:"", selectedReport:null, consoleUnit: (session && session.defaultUnit) || "", sidebarOpen:false };
 
  function uid(prefix){ return prefix+"-"+Math.random().toString(36).slice(2,9); }
   function nowIso(){ return new Date().toISOString(); }
@@ -403,7 +405,7 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
      case "units": return renderUnits();
      case "sites": return renderSites();
      case "tours": return renderTours();
-     case "chat": return renderChat();
+     case "transcripts": return renderTranscripts();
      case "radio": return renderRadio();
      case "trucks": return renderTrucks();
      case "parking": return renderParking();
@@ -594,7 +596,7 @@ function wireLogin(){
    if(route==="units") wireUnits();
    if(route==="sites") wireSites();
    if(route==="tours") wireTours();
-   if(route==="chat") wireChat();
+   if(route==="transcripts") wireTranscripts();
    if(route==="radio") wireRadio();
    if(route==="trucks") wireTrucks();
    if(route==="parking") wireParking();
@@ -654,8 +656,8 @@ function wireLogin(){
                                                                    (restored.policeOnProperty||[]).forEach(function(p){ if(!haveP[p.id]){ STATE.policeOnProperty.unshift(p); queueWrite(function(){return DB.police.insert(p);}, "police on property "+p.id); } });
                                                                    var haveN = {}; STATE.guardNotes.forEach(function(n){haveN[n.id]=1;});
                                                                    (restored.guardNotes||[]).forEach(function(n){ if(!haveN[n.id]){ STATE.guardNotes.unshift(n); queueWrite(function(){return DB.guardNotes.insert(n);}, "guard note "+n.id); } });
-                                                                   var haveMsg = {}; STATE.chat.messages.forEach(function(m){haveMsg[m.channel+"|"+m.at]=1;});
-                                                                   (restored.chat&&restored.chat.messages||[]).forEach(function(m){ var k=m.channel+"|"+m.at; if(!haveMsg[k]){ STATE.chat.messages.push(m); queueWrite(function(){return DB.chat.addMessage(m);}, "chat message"); } });
+                                                                   var haveTx = {}; (STATE.radioTranscripts||[]).forEach(function(t){haveTx[t.id]=1;});
+                                                                   (restored.radioTranscripts||[]).forEach(function(t){ if(!haveTx[t.id]){ STATE.radioTranscripts.unshift(t); queueWrite(function(){return DB.transcripts.insert(t);}, "radio transcript"); } });
                                                                  } else {
                                                                    STATE = restored;
                                                                  }

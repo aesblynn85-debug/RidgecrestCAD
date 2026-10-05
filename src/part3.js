@@ -526,8 +526,8 @@ var myCalls = STATE.calls.filter(function(c){return visibleToMe(c.post);});
   var calls = myCalls.length, cleared = myCalls.filter(function(c){return c.status==="CLEARED";}).length;
   var open = myCalls.filter(function(c){return c.status!=="CLEARED";}).length;
   html += '<div class="card" style="margin-top:16px;"><div class="section-head"><h2>Shift Report <span class="meta">Last 12 hours</span></h2></div>'+
-    '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;text-align:center;">'+
-    [["Calls",calls],["Cleared",cleared],["Open now",open],["Chat traffic",STATE.chat.messages.length],["BOLOs",STATE.chat.messages.filter(function(m){return m.bolo;}).length]].map(function(s){
+    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;text-align:center;">'+
+    [["Calls",calls],["Cleared",cleared],["Open now",open],["Radio transmissions",(STATE.radioTranscripts||[]).filter(function(t){return Date.now()-new Date(t.at).getTime() < 12*3600*1000;}).length]].map(function(s){
       return '<div><div style="font-size:20px;font-weight:700;">'+s[1]+'</div><div class="small-muted">'+s[0]+'</div></div>';
     }).join("")+
     '</div><div style="display:flex;gap:8px;margin-top:16px;"><button class="btn sm" data-action="copyShift">Copy shift report</button><button class="btn sm" data-action="printShift">Print</button></div></div>';
@@ -592,7 +592,7 @@ function renderUsers(){
   var html = pinCard + '<div class="card"><div class="section-head"><h2>User Accounts</h2><span class="meta">'+active+' active / '+visibleUsers.length+' total</span>'+
     (isManager() ? '<button class="btn sm primary" data-action="addUser">+ Add account</button> <button class="btn sm" data-action="addClient">+ Add client account</button>' : '')+
     '</div>'+
-    '<div class="small-muted" style="margin-bottom:14px;">Every account signs in with a callsign and a PIN. Guards can read the board and report — post to Patrol Chat, scan checkpoints, log trucks and attach photos. Supervisors and Admins add the roster, post directory, these accounts and the data reset. <b>Account types:</b> Admin and Supervisor accounts see every tab; Dispatch sees Live Map, Dispatch, S.C.I.C., Call History, Patrol Chat, Users and Radio PTT; Guards see Dispatch, Call History, Field Reports, Parking Lot Violations, Guard Notes, Patrol Tours, Users, Radio PTT, Patrol Chat and Truck Log. Admin and Dispatch see every site; Admins can preview any other account type with <b>View As</b> in the sidebar. Supervisors and Guards only see records for the sites they are assigned to: a Supervisor <b>Assigned site</b> below, plus the Assigned Sites on their unit in the Units tab.</div>';
+    '<div class="small-muted" style="margin-bottom:14px;">Every account signs in with a callsign and a PIN. Guards can read the board and report — talk on Radio PTT, scan checkpoints, log trucks and attach photos. Supervisors and Admins add the roster, post directory, these accounts and the data reset. <b>Account types:</b> Admin and Supervisor accounts see every tab; Dispatch sees Live Map, Dispatch, S.C.I.C., Call History, Dispatch Transcripts, Users and Radio PTT; Guards see Dispatch, Call History, Field Reports, Parking Lot Violations, Guard Notes, Patrol Tours, S.C.I.C., Users, Radio PTT and Truck Log. Dispatch Transcripts is only visible to Supervisor, Admin and Dispatch accounts. Admin and Dispatch see every site; Admins can preview any other account type with <b>View As</b> in the sidebar. Supervisors and Guards only see records for the sites they are assigned to: a Supervisor <b>Assigned site</b> below, plus the Assigned Sites on their unit in the Units tab.</div>';
   html += visibleUsers.map(function(u){
     var mapAccess = "";
     if(u.role==="SUPV"){
@@ -1221,7 +1221,7 @@ function renderScic(){
     '</div>'+
     '<div class="small-muted" style="margin-top:6px;">A reason is required for every S.C.I.C. search. Trespass searches must also be linked to an active dispatch call.</div>'+
     '<div style="display:flex;gap:8px;margin-top:8px;"><button type="submit" class="btn sm primary" id="scicSearchBtn" disabled>Search</button><button type="button" class="btn sm" id="scicSearchClear">Clear search</button></div></form>';
-  html += '<div class="small-muted" style="margin-bottom:10px;">Combines Trespass Reports and Parking Lot Violations. Restricted to guards and supervisors, scoped to the site(s) you are assigned to — never other sites.</div>';
+  html += '<div class="small-muted" style="margin-bottom:10px;">Combines Trespass Reports and Parking Lot Violations. Guards and supervisors only see the site(s) they are assigned to — never other sites.</div>';
   if(!searched){ html += '<div class="empty-state">No records are shown until a search is run. Enter a vehicle plate # or a person&#39;s name, select a reason, and press Search.</div>'; }
   else if(!filtered.length){ html += '<div class="empty-state">No matching S.C.I.C. records.</div>'; }
   else {
