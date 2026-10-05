@@ -8,8 +8,9 @@
    {id:"units", label:"Units", ic:"▤"},
    {id:"sites", label:"Sites", ic:"◇"},
    {id:"tours", label:"Patrol Tours", ic:"⚑"},
-   {id:"chat", label:"Patrol Chat", ic:"✇"},
    {id:"radio", label:"Radio PTT", ic:"▶"},
+   // Supervisor/Admin/Dispatch only (ROLE_NAV below) — renderTranscripts() also refuses anyone else.
+   {id:"transcripts", label:"Dispatch Transcripts", ic:"✇", supvOnly:true},
    {id:"trucks", label:"Truck Log", ic:"▢"},
    {id:"parking", label:"Parking Lot Violations", ic:"⚠"},
    {id:"reports", label:"Field Reports", ic:"☷"},
@@ -27,16 +28,17 @@
  /* ---------------- account types (roles) ----------------
      ADMIN    - every sidebar tab, every site.
      SUPV     - Supervisor: every sidebar tab, but only records for the site(s) they're assigned to.
-     DISPATCH - Live Map, Dispatch, S.C.I.C., Call History, Patrol Chat, Users, Radio PTT; every site.
+     DISPATCH - Live Map, Dispatch, S.C.I.C., Call History, Dispatch Transcripts, Users, Radio PTT; every site.
      GUARD    - Dispatch, Call History, Field Reports, Parking Lot Violations, Guard Notes, Patrol Tours,
-                Users, Radio PTT, Patrol Chat, Truck Log; only records for the site(s) they're assigned to.
+                S.C.I.C., Users, Radio PTT, Truck Log; only records for the site(s) they're assigned to.
+                (No Dispatch Transcripts — that's Supervisor/Admin/Dispatch only.)
      CLIENT   - Truck Log only, for their one site.
      The sidebar is built from roleNav(), and renderShell() redirects any other route, so typing a
      #hash by hand can't open a tab the account isn't allowed to see. */
   var ROLE_LABELS = {ADMIN:"Admin", SUPV:"Supervisor", DISPATCH:"Dispatch", GUARD:"Guard", CLIENT:"Client"};
   var ROLE_NAV = {
-    DISPATCH: ["map","dispatch","scic","callhistory","chat","users","radio"],
-    GUARD: ["dispatch","callhistory","reports","parking","guardnotes","tours","users","radio","chat","trucks"],
+    DISPATCH: ["map","dispatch","scic","callhistory","transcripts","users","radio"],
+    GUARD: ["dispatch","callhistory","reports","parking","guardnotes","tours","scic","users","radio","trucks"],
     CLIENT: ["trucks"]
   };
   function roleNav(role){
@@ -108,7 +110,7 @@ return f ? f[1] : code;
  var route = (location.hash || "#dispatch").replace("#","");
   var session = null; // {callsign,name,role}
  try { session = JSON.parse(sessionStorage.getItem("cad_session")||"null"); } catch(e){}
-  var uiState = { chatChannel:"all-hands", reportsTab:"incident", reportsFilter:"all", loginErr:"", pendingPin:"", selectedReport:null, consoleUnit: (session && session.defaultUnit) || "", sidebarOpen:false };
+  var uiState = { reportsTab:"incident", reportsFilter:"all", loginErr:"", pendingPin:"", selectedReport:null, consoleUnit: (session && session.defaultUnit) || "", sidebarOpen:false };
 
  function uid(prefix){ return prefix+"-"+Math.random().toString(36).slice(2,9); }
   function nowIso(){ return new Date().toISOString(); }
@@ -403,7 +405,7 @@ function stopLiveTracking(){ if(liveTrackTimer){ clearInterval(liveTrackTimer); 
      case "units": return renderUnits();
      case "sites": return renderSites();
      case "tours": return renderTours();
-     case "chat": return renderChat();
+     case "transcripts": return renderTranscripts();
      case "radio": return renderRadio();
      case "trucks": return renderTrucks();
      case "parking": return renderParking();
@@ -594,7 +596,7 @@ function wireLogin(){
    if(route==="units") wireUnits();
    if(route==="sites") wireSites();
    if(route==="tours") wireTours();
-   if(route==="chat") wireChat();
+   if(route==="transcripts") wireTranscripts();
    if(route==="radio") wireRadio();
    if(route==="trucks") wireTrucks();
    if(route==="parking") wireParking();
@@ -654,8 +656,8 @@ function wireLogin(){
                                                                    (restored.policeOnProperty||[]).forEach(function(p){ if(!haveP[p.id]){ STATE.policeOnProperty.unshift(p); queueWrite(function(){return DB.police.insert(p);}, "police on property "+p.id); } });
                                                                    var haveN = {}; STATE.guardNotes.forEach(function(n){haveN[n.id]=1;});
                                                                    (restored.guardNotes||[]).forEach(function(n){ if(!haveN[n.id]){ STATE.guardNotes.unshift(n); queueWrite(function(){return DB.guardNotes.insert(n);}, "guard note "+n.id); } });
-                                                                   var haveMsg = {}; STATE.chat.messages.forEach(function(m){haveMsg[m.channel+"|"+m.at]=1;});
-                                                                   (restored.chat&&restored.chat.messages||[]).forEach(function(m){ var k=m.channel+"|"+m.at; if(!haveMsg[k]){ STATE.chat.messages.push(m); queueWrite(function(){return DB.chat.addMessage(m);}, "chat message"); } });
+                                                                   var haveTx = {}; (STATE.radioTranscripts||[]).forEach(function(t){haveTx[t.id]=1;});
+                                                                   (restored.radioTranscripts||[]).forEach(function(t){ if(!haveTx[t.id]){ STATE.radioTranscripts.unshift(t); queueWrite(function(){return DB.transcripts.insert(t);}, "radio transcript"); } });
                                                                  } else {
                                                                    STATE = restored;
                                                                  }
@@ -1164,83 +1166,112 @@ function wireSites(){
   });
 }
 
-/* ---------------- PATROL CHAT ---------------- */
-function renderChat(){
-  var ch = STATE.chat.channels.find(function(c){return c.id===uiState.chatChannel;}) || STATE.chat.channels[0];
-  var msgs = STATE.chat.messages.filter(function(m){return m.channel===ch.id;});
-  var activeBolo = STATE.chat.messages.filter(function(m){return m.bolo;}).length;
-  var onDuty = STATE.units.filter(function(u){return unitVisible(u) && (u.status!=="OFFDUTY"&&u.status!=="ENDSHIFT");});
-  var html = '<div class="section-head"><h2>Patrol Chat</h2><span class="meta">'+onDuty.length+' on duty · '+STATE.chat.channels.length+' channels'+(activeBolo?' · <span style="color:hsl(var(--destructive));">⚠ '+activeBolo+' active BOLO</span>':'')+'</span></div>';
-  html += '<div class="two-col">';
-  html += '<div class="card"><div class="small-muted" style="margin-bottom:6px;text-transform:uppercase;">Channels</div>'+
-    STATE.chat.channels.map(function(c){ return '<button class="btn ghost sm" data-chan="'+c.id+'" style="width:100%;justify-content:flex-start;margin-bottom:2px;'+(c.id===ch.id?'background:hsl(var(--accent));':'')+'">#'+escapeHtml(c.name)+'</button>'; }).join("")+
-    '<div class="divider"></div><div style="display:flex;gap:6px;"><input id="newChanName" type="text" placeholder="New channel"><button class="btn sm" data-action="addChan">Add</button></div>'+
-    '<div class="small-muted" style="margin-top:14px;text-transform:uppercase;">On Duty</div>'+
-                                                                                                                                                     onDuty.map(function(u){ return '<div style="padding:4px 0;">● '+escapeHtml(u.callsign)+' '+escapeHtml(u.name)+'</div>'; }).join("")+
+/* ---------------- DISPATCH TRANSCRIPTS ----------------
+Replaces the old Patrol Chat tab. A read-only, searchable log of every Radio PTT transmission
+on the Dispatch channel: date, time, the unit that was talking, and what they said (transcribed
+on the talker's own device -- see radioTranscriber below). Only Supervisor, Admin and Dispatch
+accounts can open it (ROLE_NAV in app.js); canViewTranscripts() is a second line of defense. */
+function canViewTranscripts(){ return !!session && (session.role==="ADMIN" || session.role==="SUPV" || session.role==="DISPATCH"); }
+function fmtTxDate(iso){ var d=new Date(iso); return (d.getMonth()+1)+"/"+d.getDate()+"/"+d.getFullYear(); }
+function fmtTxTime(iso){ var d=new Date(iso); var h=d.getHours(), am=h<12?"AM":"PM", h12=h%12||12; return h12+":"+String(d.getMinutes()).padStart(2,"0")+":"+String(d.getSeconds()).padStart(2,"0")+" "+am; }
+function txDayKey(iso){ var d=new Date(iso); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function filteredTranscripts(){
+  var f = uiState.txFilter || {};
+  var q = (f.q||"").toLowerCase();
+  return (STATE.radioTranscripts||[]).filter(function(t){
+    if(f.date && txDayKey(t.at)!==f.date) return false;
+    if(f.unit && t.callsign!==f.unit) return false;
+    if(q && ((t.text||"")+" "+(t.callsign||"")+" "+(t.name||"")).toLowerCase().indexOf(q)===-1) return false;
+    return true;
+  }).sort(function(a,b){ return new Date(b.at)-new Date(a.at); });
+}
+function renderTranscripts(){
+  if(!canViewTranscripts()) return '<div class="empty-state">Dispatch Transcripts is only available to Supervisor, Admin and Dispatch accounts.</div>';
+  var f = uiState.txFilter || {};
+  var all = STATE.radioTranscripts||[];
+  var list = filteredTranscripts();
+  var units = []; all.forEach(function(t){ if(t.callsign && units.indexOf(t.callsign)===-1) units.push(t.callsign); }); units.sort();
+  var html = '<div class="section-head"><h2>Dispatch Transcripts</h2><span class="meta">'+list.length+' of '+all.length+' transmission'+(all.length===1?'':'s')+' · Dispatch channel</span></div>';
+  html += '<div class="card" style="margin-bottom:16px;"><div class="grid2" style="gap:10px;">'+
+    '<label class="field"><span class="lbl">Date</span><input type="date" id="txDate" value="'+escapeHtml(f.date||"")+'"></label>'+
+    '<label class="field"><span class="lbl">Unit</span><select id="txUnit"><option value="">All units</option>'+
+      units.map(function(u){ return '<option value="'+escapeHtml(u)+'"'+(f.unit===u?' selected':'')+'>'+escapeHtml(u)+'</option>'; }).join("")+
+    '</select></label></div>'+
+    '<label class="field"><span class="lbl">Search transcript text</span><input type="text" id="txSearch" placeholder="Words spoken, callsign or name…" value="'+escapeHtml(f.q||"")+'"></label>'+
+    '<div style="display:flex;gap:8px;margin-top:8px;"><button class="btn sm primary" data-action="txApply">Filter</button><button class="btn sm" data-action="txClear">Clear</button><button class="btn sm" data-action="txCsv">Export CSV</button></div>'+
     '</div>';
-  html += '<div class="card"><div style="font-weight:700;">#'+escapeHtml(ch.name)+'</div><div class="small-muted" style="margin-bottom:10px;">'+escapeHtml(ch.desc||"")+' · '+msgs.length+' messages</div>'+
-    '<div id="chatMsgs" style="max-height:420px;overflow-y:auto;margin-bottom:12px;">'+
-    (msgs.length? msgs.map(function(m){
-      return '<div class="chat-msg'+(m.bolo?' bolo':'')+'"><div class="head"><span><span class="from">'+escapeHtml(m.from)+'</span><span class="name">'+escapeHtml(m.name||"")+'</span>'+(m.bolo?' <span class="pill destructive">BOLO</span>':'')+'</span><span class="when">'+fmtShort(m.at)+' · '+fmtAgo(m.at)+'</span></div><div>'+escapeHtml(m.text)+'</div></div>';
-    }).join("") : '<div class="empty-state">No traffic on '+escapeHtml(ch.name)+' yet. Post the first message below.</div>')+
-    '</div>'+
-    '<div style="display:flex;gap:8px;margin-bottom:8px;"><label class="chk-row" style="margin:0;"><input type="checkbox" id="boloChk"> Mark as BOLO</label></div>'+
-    '<div style="display:flex;gap:8px;"><textarea id="chatInput" rows="2" placeholder="Message #'+escapeHtml(ch.name)+'…" style="flex:1;"></textarea><button class="btn primary" data-action="sendChat">Send</button></div>'+
-    '<div class="small-muted" style="margin-top:6px;">Enter sends, Shift+Enter starts a new line. BOLOs are copied into the activity log automatically.</div>'+
-    '</div></div>';
+  if(!list.length){
+    html += '<div class="empty-state">'+(all.length ? 'No transmissions match these filters.' : 'No radio traffic yet. Every Radio PTT transmission on the Dispatch channel is transcribed and listed here automatically.')+'</div>';
+    return html;
+  }
+  html += '<div class="card"><table class="datatable"><thead><tr><th>Date</th><th>Time</th><th>Unit</th><th>Site</th><th>Transcript</th></tr></thead><tbody>'+
+    list.map(function(t){
+      var secs = t.endedAt ? Math.max(1, Math.round((new Date(t.endedAt)-new Date(t.at))/1000)) : 0;
+      return '<tr><td class="mono small-muted" style="white-space:nowrap;">'+fmtTxDate(t.at)+'</td>'+
+        '<td class="mono small-muted" style="white-space:nowrap;">'+fmtTxTime(t.at)+(secs?'<div>'+secs+'s</div>':'')+'</td>'+
+        '<td style="white-space:nowrap;"><b>'+escapeHtml(t.callsign||"—")+'</b>'+(t.name?'<div class="small-muted">'+escapeHtml(t.name)+'</div>':'')+'</td>'+
+        '<td>'+escapeHtml(t.post||"—")+'</td>'+
+        '<td>'+escapeHtml(t.text||"")+'</td></tr>';
+    }).join("")+'</tbody></table></div>';
   return html;
 }
-
-function wireChat(){
-  document.querySelectorAll("[data-chan]").forEach(function(b){ b.addEventListener("click", function(){ uiState.chatChannel=b.getAttribute("data-chan"); render(); }); });
-  var addChan = document.querySelector('[data-action="addChan"]');
-  if(addChan) addChan.addEventListener("click", function(){
-    var name = document.getElementById("newChanName").value.trim();
-    if(!name) return;
-    var id = name.toLowerCase().replace(/[^a-z0-9]+/g,"-");
-    var ch = {id:id, name:name, desc:""};
-    STATE.chat.channels.push(ch);
-    uiState.chatChannel = id;
-    persist(function(){ return DB.chat.addChannel(ch); }, "channel #"+name);
-  });
-  var send = document.querySelector('[data-action="sendChat"]');
-  function doSend(){
-    var txt = document.getElementById("chatInput").value.trim();
-    if(!txt) return;
-    var bolo = document.getElementById("boloChk").checked;
-    var msg = {channel:uiState.chatChannel, from:session.callsign, name:session.name, bolo:bolo, text:txt, at:nowIso()};
-    STATE.chat.messages.push(msg);
-    if(bolo) logActivity("CHAT", session.callsign, "BOLO on "+(STATE.chat.channels.find(function(c){return c.id===uiState.chatChannel;})||{}).name+" — "+txt);
-    persist(function(){ return DB.chat.addMessage(msg); }, "chat message");
+function wireTranscripts(){
+  function apply(){
+    uiState.txFilter = {
+      date: (document.getElementById("txDate")||{}).value||"",
+      unit: (document.getElementById("txUnit")||{}).value||"",
+      q: ((document.getElementById("txSearch")||{}).value||"").trim()
+    };
+    render();
   }
-  if(send) send.addEventListener("click", doSend);
-  var input = document.getElementById("chatInput");
-  if(input) input.addEventListener("keydown", function(e){ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); doSend(); } });
+  var ap = document.querySelector('[data-action="txApply"]'); if(ap) ap.addEventListener("click", apply);
+  ["txDate","txUnit"].forEach(function(id){ var el=document.getElementById(id); if(el) el.addEventListener("change", apply); });
+  var srch = document.getElementById("txSearch"); if(srch) srch.addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); apply(); } });
+  var clr = document.querySelector('[data-action="txClear"]'); if(clr) clr.addEventListener("click", function(){ uiState.txFilter={}; render(); });
+  var csv = document.querySelector('[data-action="txCsv"]'); if(csv) csv.addEventListener("click", function(){
+    var rows = [["Date","Time","Unit","Name","Site","Duration (s)","Transcript"]];
+    filteredTranscripts().forEach(function(t){
+      var secs = t.endedAt ? Math.max(1, Math.round((new Date(t.endedAt)-new Date(t.at))/1000)) : "";
+      rows.push([fmtTxDate(t.at), fmtTxTime(t.at), t.callsign, t.name, t.post, secs, t.text]);
+    });
+    var body = rows.map(function(r){ return r.map(function(v){ v=String(v==null?"":v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }).join(","); }).join("\n");
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([body], {type:"text/csv"}));
+    a.download = "dispatch_transcripts.csv";
+    document.body.appendChild(a); a.click(); a.parentNode.removeChild(a);
+  });
 }
 
 /* ---------------- RADIO PTT ----------------
-Live push-to-talk: real audio, peer-to-peer WebRTC (mesh -- every participant connects to
-every other participant directly), signalled over a Supabase Realtime channel per chat
-channel ("radio:"+channelId, reusing STATE.chat.channels so Radio PTT and Patrol Chat share
-the same channel list). broadcast carries offer/answer/ICE; presence tracks who is on the
-channel right now. Nothing about a PTT session is ever written to Postgres -- there is no
-recording and no channel history, same as a real analog radio. Only a public STUN server is
-used (no TURN/relay), so a connection between two guards on very restrictive/symmetric NATs
-or a locked-down corporate firewall may fail silently for that pair -- everyone else on the
-channel is unaffected. */
+One channel only: "Dispatch". Live push-to-talk audio is peer-to-peer WebRTC (mesh -- every
+participant connects to every other participant directly), signalled over the Supabase
+Realtime channel "radio:dispatch": broadcast carries offer/answer/ICE, presence tracks who is
+on the channel right now. Only a public STUN server is used (no TURN/relay), so a connection
+between two guards on very restrictive/symmetric NATs or a locked-down corporate firewall may
+fail silently for that pair -- everyone else on the channel is unaffected.
+
+The audio itself is never stored. While a unit holds Talk, their own browser runs speech
+recognition on their mic and, when they release, saves the text as one radio_transcripts row
+(date/time keyed up, callsign, name, site, text) -- shown in the Dispatch Transcripts tab.
+
+The mic is requested when the unit joins the channel (opening the Radio PTT tab), BEFORE any
+peer connections are made, so the audio track is part of every connection from the start.
+(Previously the mic was added on the first Talk press, after peers were already connected,
+with no renegotiation -- so other units often never received that guard's audio.) */
+var RADIO_CHANNEL_ID = "dispatch";
+var RADIO_CHANNEL_NAME = "Dispatch";
 var radioChannel = null; // current Supabase Realtime channel object, or null if not joined
-var radioChannelKey = null; // which chat-channel id radioChannel is joined to
-var radioLocalStream = null; // this guard's mic MediaStream -- requested once, kept muted via track.enabled
+var radioChannelKey = null; // RADIO_CHANNEL_ID once joined
+var radioLocalStream = null; // this unit's mic MediaStream -- muted via track.enabled except while talking
+var radioMicDenied = false; // mic refused -> listen-only
 var radioPeers = {}; // callsign -> RTCPeerConnection
 var radioTalkers = {}; // callsign -> true while that peer is transmitting
 var radioTalking = false; // am I holding Talk right now
-var radioJoining = false; // guards against double-join while a channel switch is in flight
+var radioJoining = false; // guards against double-join while a join is in flight
 var RADIO_ICE_SERVERS = [{urls:"stun:stun.l.google.com:19302"}];
 
-/* A hidden sink appended directly to document.body (NOT inside #view) so remote guards'
-<audio> elements survive render()'s full #view innerHTML replacement, which happens on
-every state change including ones from other guards roughly every 700ms-debounced realtime
-refresh. Audio playback living inside #view would cut out constantly. */
+/* A hidden sink appended directly to document.body (NOT inside #view) so remote units'
+<audio> elements survive render()'s full #view innerHTML replacement. */
 function radioAudioSink(){
   var el = document.getElementById("radioAudioSink");
   if(!el){
@@ -1286,11 +1317,14 @@ function radioEnsurePeer(callsign){
   radioPeers[callsign] = pc;
   if(radioLocalStream){
     radioLocalStream.getTracks().forEach(function(t){ pc.addTrack(t, radioLocalStream); });
+  } else {
+    // Listen-only (no mic): still ask to receive the other side's audio.
+    try{ pc.addTransceiver("audio", {direction:"recvonly"}); }catch(e){}
   }
   pc.onicecandidate = function(e){
     if(e.candidate) radioSend({kind:"ice", to:callsign, from:session.callsign, candidate:e.candidate});
   };
-  pc.ontrack = function(e){ radioSetPeerAudio(callsign, e.streams[0]); };
+  pc.ontrack = function(e){ radioSetPeerAudio(callsign, e.streams[0] || new MediaStream([e.track])); };
   return pc;
 }
 
@@ -1327,8 +1361,7 @@ function radioPresenceKeys(){
 }
 
 /* Runs on every presence sync. Exactly one side of each pair initiates the offer -- whichever
-callsign sorts first alphabetically -- so two guards never both send offers to each other and
-collide, with no central coordinator needed. */
+callsign sorts first alphabetically -- so two units never both send offers to each other. */
 function radioSyncPeersToPresence(){
   var present = radioPresenceKeys().filter(function(cs){ return cs !== session.callsign; });
   present.forEach(function(cs){
@@ -1340,12 +1373,25 @@ function radioSyncPeersToPresence(){
   render();
 }
 
-function radioJoinChannel(channelId){
-  if(radioChannelKey === channelId && radioChannel) return Promise.resolve();
-  return radioLeaveChannel().then(function(){
-    radioJoining = true;
+/* Ask for the mic once (kept muted until Talk is held). Resolves either way; on refusal the
+unit joins listen-only and the Talk button explains why. */
+function radioEnsureMic(){
+  if(radioLocalStream) return Promise.resolve(true);
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ radioMicDenied = true; return Promise.resolve(false); }
+  return navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true}}).then(function(s){
+    radioLocalStream = s;
+    radioMicDenied = false;
+    s.getAudioTracks().forEach(function(t){ t.enabled = false; });
+    return true;
+  }).catch(function(){ radioMicDenied = true; return false; });
+}
+
+function radioJoinDispatch(){
+  if((radioChannelKey === RADIO_CHANNEL_ID && radioChannel) || radioJoining) return Promise.resolve();
+  radioJoining = true;
+  return radioEnsureMic().then(function(){ return radioLeaveChannel(); }).then(function(){
     return new Promise(function(resolve){
-      var ch = DB.radio.channel("radio:"+channelId, {config:{broadcast:{self:false}, presence:{key:session.callsign}}});
+      var ch = DB.radio.channel("radio:"+RADIO_CHANNEL_ID, {config:{broadcast:{self:false}, presence:{key:session.callsign}}});
       ch.on("broadcast", {event:"signal"}, function(msg){ radioHandleSignal(msg.payload); });
       ch.on("broadcast", {event:"talk"}, function(msg){
         var p = msg.payload;
@@ -1362,14 +1408,19 @@ function radioJoinChannel(channelId){
         if(status === "SUBSCRIBED"){
           ch.track({callsign:session.callsign, name:session.name});
           radioChannel = ch;
-          radioChannelKey = channelId;
+          radioChannelKey = RADIO_CHANNEL_ID;
           radioJoining = false;
+          render();
+          resolve();
+        } else if(status === "CHANNEL_ERROR" || status === "TIMED_OUT"){
+          radioJoining = false;
+          toast("Couldn't join the Dispatch radio channel. Reopen Radio PTT to retry.");
           render();
           resolve();
         }
       });
     });
-  });
+  }).catch(function(e){ radioJoining = false; console.warn("radio join failed", e); });
 }
 
 function radioLeaveChannel(){
@@ -1381,23 +1432,99 @@ function radioLeaveChannel(){
   return Promise.resolve(ch.unsubscribe()).catch(function(){});
 }
 
-/* Mic is requested once, the first time a guard presses Talk, then kept forever (muted via
-track.enabled) so every later press is instant with no repeat permission prompt. Torn down
-completely by teardownRadio() when leaving the Radio tab or signing out. */
+/* ---- transcription: browser speech recognition on the talker's own mic ----
+Runs only while Talk is held. Uses the Web Speech API (Chrome/Edge on desktop & Android,
+Safari on iPhone/iPad/Mac). Chrome sends this audio to Google's speech service to turn it into
+text. If the browser has no speech recognition, the transmission is still logged (date, time,
+unit) with a note that no transcript was available. */
+var RadioSpeech = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+var radioTx = null; // {at, finals:[], interim:"", rec, stopped, saved}
+
+function radioStartTranscript(){
+  var tx = {at:nowIso(), finals:[], interim:"", rec:null, stopped:false, saved:false, error:""};
+  radioTx = tx;
+  if(!RadioSpeech) return;
+  function startRec(){
+    var rec;
+    try{ rec = new RadioSpeech(); }catch(e){ tx.error = "unsupported"; return; }
+    rec.lang = "en-US";
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.onresult = function(ev){
+      var interim = "";
+      for(var i=ev.resultIndex;i<ev.results.length;i++){
+        var r = ev.results[i];
+        if(r.isFinal) tx.finals.push(r[0].transcript.trim()); else interim += r[0].transcript;
+      }
+      tx.interim = interim.trim();
+    };
+    rec.onerror = function(ev){ if(ev && ev.error && ev.error!=="no-speech" && ev.error!=="aborted") tx.error = ev.error; };
+    rec.onend = function(){
+      // Browsers end recognition on their own after a pause; restart while Talk is still held.
+      if(!tx.stopped && radioTx===tx && !tx.error){ startRec(); return; }
+      if(tx.stopped) radioSaveTranscript(tx);
+    };
+    tx.rec = rec;
+    try{ rec.start(); }catch(e){ tx.error = "start-failed"; }
+  }
+  startRec();
+}
+
+function radioStopTranscript(){
+  var tx = radioTx;
+  if(!tx) return;
+  tx.stopped = true;
+  tx.endedAt = nowIso();
+  radioTx = null;
+  if(tx.rec){
+    // Give the recognizer a moment to deliver the last words, then save from onend.
+    setTimeout(function(){ try{ tx.rec.stop(); }catch(e){ radioSaveTranscript(tx); } }, 400);
+    setTimeout(function(){ radioSaveTranscript(tx); }, 4000); // safety net if onend never fires
+  } else {
+    radioSaveTranscript(tx);
+  }
+}
+
+function radioSaveTranscript(tx){
+  if(tx.saved) return;
+  tx.saved = true;
+  var text = tx.finals.concat(tx.interim ? [tx.interim] : []).join(" ").replace(/\s+/g," ").trim();
+  var ms = new Date(tx.endedAt||nowIso()) - new Date(tx.at);
+  if(!text){
+    if(ms < 1000) return; // accidental tap -- nothing said, don't clutter the log
+    text = !RadioSpeech ? "[No transcript — this browser does not support speech-to-text]"
+         : (tx.error==="not-allowed" || tx.error==="service-not-allowed") ? "[No transcript — speech-to-text was blocked on this device]"
+         : (tx.error==="network") ? "[No transcript — speech-to-text service unreachable]"
+         : "[No speech recognized]";
+  }
+  var u = (typeof currentUnit==="function") ? currentUnit() : null;
+  var postId = u && u.post ? u.post : (session.assignedPostId||"");
+  var postObj = postId ? STATE.posts.find(function(p){ return p.id===postId; }) : null;
+  var t = {
+    id: uid("tx"), at: tx.at, endedAt: tx.endedAt||nowIso(), channel: RADIO_CHANNEL_ID,
+    callsign: (u && u.callsign) || session.callsign, name: session.name||"",
+    post: postId ? (postId+(postObj?" "+postObj.name:"")) : "", text: text
+  };
+  STATE.radioTranscripts = STATE.radioTranscripts||[];
+  STATE.radioTranscripts.unshift(t);
+  persist(function(){ return DB.transcripts.insert(t); }, "radio transcript");
+}
+
 async function radioStartTalk(){
   if(radioTalking || !radioChannel) return;
   if(!radioLocalStream){
-    try{ radioLocalStream = await navigator.mediaDevices.getUserMedia({audio:true}); }
-    catch(e){ toast("Microphone access is required for Radio PTT."); return; }
-    radioLocalStream.getAudioTracks().forEach(function(t){ t.enabled = false; });
-    Object.keys(radioPeers).forEach(function(cs){
-      var pc = radioPeers[cs];
-      radioLocalStream.getTracks().forEach(function(t){ pc.addTrack(t, radioLocalStream); });
-    });
+    // Mic was refused when joining. Ask again; if granted, rejoin so every connection carries it.
+    var ok = await radioEnsureMic();
+    if(!ok){ toast("Microphone access is required to talk on Radio PTT. Allow the mic for this site and try again."); render(); return; }
+    await radioLeaveChannel();
+    await radioJoinDispatch();
+    toast("Mic enabled — press and hold Talk again.");
+    return;
   }
   radioLocalStream.getAudioTracks().forEach(function(t){ t.enabled = true; });
   radioTalking = true;
   radioChannel.send({type:"broadcast", event:"talk", payload:{callsign:session.callsign, talking:true}});
+  radioStartTranscript();
   render();
 }
 function radioStopTalk(){
@@ -1405,14 +1532,16 @@ function radioStopTalk(){
   if(radioLocalStream) radioLocalStream.getAudioTracks().forEach(function(t){ t.enabled = false; });
   radioTalking = false;
   if(radioChannel) radioChannel.send({type:"broadcast", event:"talk", payload:{callsign:session.callsign, talking:false}});
+  radioStopTranscript();
   render();
 }
 
 /* Called from app.js when navigating away from the radio route (hashchange) and on sign-out,
-so a guard who leaves the tab or signs out never keeps a mic hot or a peer connection open. */
+so a unit who leaves the tab or signs out never keeps a mic hot or a peer connection open. */
 function teardownRadio(){
   radioStopTalk();
   radioLeaveChannel();
+  radioJoining = false;
   if(radioLocalStream){
     radioLocalStream.getTracks().forEach(function(t){ t.stop(); });
     radioLocalStream = null;
@@ -1420,28 +1549,33 @@ function teardownRadio(){
 }
 
 function renderRadio(){
-  var channels = (STATE.chat && STATE.chat.channels) || [];
-  var current = radioChannelKey;
+  var joined = radioChannelKey === RADIO_CHANNEL_ID && !!radioChannel;
   var onAir = Object.keys(radioTalkers).filter(function(cs){ return radioTalkers[cs]; });
   var roster = radioPresenceKeys().filter(function(cs){ return cs !== session.callsign; });
-  var chOptions = channels.map(function(c){
-    return '<option value="'+escapeHtml(c.id)+'"'+(c.id===current?' selected':'')+'>#'+escapeHtml(c.name)+'</option>';
-  }).join("");
-  return '<div class="card"><div class="section-head"><h2>Radio PTT</h2><span class="meta">'+(current?(roster.length+1)+' on channel':'not joined')+'</span></div>'+
+  var status = joined ? (roster.length+1)+' on channel' : (radioJoining ? 'joining…' : 'not joined');
+  return '<div class="card"><div class="section-head"><h2>Radio PTT</h2><span class="meta">'+status+'</span></div>'+
     '<div style="padding:4px 0 16px;">'+
-    '<label class="field"><span class="lbl">Channel</span><select id="radioChanSel"><option value="">Select a channel…</option>'+chOptions+'</select></label>'+
-    (current ? ('<div class="small-muted" style="margin:8px 0 16px;">On air: '+(onAir.length?escapeHtml(onAir.join(", ")):"nobody right now")+'</div>') : '<div class="small-muted" style="margin:8px 0 16px;">Join a channel to start talking.</div>')+
-    '<button id="radioTalkBtn" class="btn primary" style="width:100%;padding:22px;font-size:16px;font-weight:700;'+(radioTalking?'background:hsl(var(--destructive));border-color:hsl(var(--destructive));':'')+'" '+(current?"":"disabled")+'>'+(radioTalking?"● TALKING — release to stop":"HOLD TO TALK")+'</button>'+
-    '<div class="small-muted" style="margin-top:10px;">Live voice only, nothing is ever recorded or saved. The first press on a channel will ask for microphone access. Works best with a handful of guards on the same channel at once.</div>'+
+    '<div class="field"><span class="lbl">Channel</span><div class="v" style="font-weight:700;font-size:16px;">#'+RADIO_CHANNEL_NAME+'</div></div>'+
+    (joined
+      ? '<div class="small-muted" style="margin:8px 0 4px;">On channel: '+escapeHtml([session.callsign+" (you)"].concat(roster).join(", "))+'</div>'+
+        '<div class="small-muted" style="margin:0 0 16px;">On air: '+(onAir.length?'<b style="color:hsl(var(--destructive));">'+escapeHtml(onAir.join(", "))+'</b>':"nobody right now")+'</div>'
+      : '<div class="small-muted" style="margin:8px 0 16px;">'+(radioJoining?'Connecting to Dispatch…':'Not connected.')+'</div>')+
+    (radioMicDenied ? '<div class="small-muted" style="margin:0 0 10px;color:hsl(var(--destructive));">Microphone is blocked — you can listen, but you need to allow the mic for this site to talk.</div>' : '')+
+    '<button id="radioTalkBtn" class="btn primary" style="width:100%;padding:22px;font-size:16px;font-weight:700;user-select:none;-webkit-user-select:none;touch-action:none;'+(radioTalking?'background:hsl(var(--destructive));border-color:hsl(var(--destructive));':'')+'" '+(joined?"":"disabled")+'>'+(radioTalking?"● TALKING — release to stop":"HOLD TO TALK")+'</button>'+
+    '<div class="small-muted" style="margin-top:10px;">Live voice on the Dispatch channel. Audio is not recorded, but everything said is transcribed to text and saved to Dispatch Transcripts with the date, time and your unit. Opening this tab asks for microphone access.</div>'+
+    (RadioSpeech ? '' : '<div class="small-muted" style="margin-top:6px;color:hsl(var(--destructive));">This browser can\'t do speech-to-text, so your transmissions will be logged without words. Use Chrome, Edge or Safari for transcripts.</div>')+
     '</div></div>';
 }
 
+var radioReleaseWired = false;
 function wireRadio(){
-  var sel = document.getElementById("radioChanSel");
-  if(sel) sel.addEventListener("change", function(){
-    var v = sel.value;
-    if(v) radioJoinChannel(v); else radioLeaveChannel().then(render);
-  });
+  if(!radioChannel && !radioJoining && DB && DB.radio) radioJoinDispatch();
+  // Safety net: releasing anywhere on the page ends the transmission, even if a re-render
+  // swapped the button out from under the unit's finger mid-hold.
+  if(!radioReleaseWired){
+    radioReleaseWired = true;
+    ["mouseup","touchend","touchcancel","blur"].forEach(function(evt){ window.addEventListener(evt, function(){ if(radioTalking) radioStopTalk(); }); });
+  }
   var btn = document.getElementById("radioTalkBtn");
   if(!btn) return;
   btn.addEventListener("mousedown", function(e){ e.preventDefault(); radioStartTalk(); });
@@ -2073,8 +2207,8 @@ var myCalls = STATE.calls.filter(function(c){return visibleToMe(c.post);});
   var calls = myCalls.length, cleared = myCalls.filter(function(c){return c.status==="CLEARED";}).length;
   var open = myCalls.filter(function(c){return c.status!=="CLEARED";}).length;
   html += '<div class="card" style="margin-top:16px;"><div class="section-head"><h2>Shift Report <span class="meta">Last 12 hours</span></h2></div>'+
-    '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;text-align:center;">'+
-    [["Calls",calls],["Cleared",cleared],["Open now",open],["Chat traffic",STATE.chat.messages.length],["BOLOs",STATE.chat.messages.filter(function(m){return m.bolo;}).length]].map(function(s){
+    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;text-align:center;">'+
+    [["Calls",calls],["Cleared",cleared],["Open now",open],["Radio transmissions",(STATE.radioTranscripts||[]).filter(function(t){return Date.now()-new Date(t.at).getTime() < 12*3600*1000;}).length]].map(function(s){
       return '<div><div style="font-size:20px;font-weight:700;">'+s[1]+'</div><div class="small-muted">'+s[0]+'</div></div>';
     }).join("")+
     '</div><div style="display:flex;gap:8px;margin-top:16px;"><button class="btn sm" data-action="copyShift">Copy shift report</button><button class="btn sm" data-action="printShift">Print</button></div></div>';
@@ -2139,7 +2273,7 @@ function renderUsers(){
   var html = pinCard + '<div class="card"><div class="section-head"><h2>User Accounts</h2><span class="meta">'+active+' active / '+visibleUsers.length+' total</span>'+
     (isManager() ? '<button class="btn sm primary" data-action="addUser">+ Add account</button> <button class="btn sm" data-action="addClient">+ Add client account</button>' : '')+
     '</div>'+
-    '<div class="small-muted" style="margin-bottom:14px;">Every account signs in with a callsign and a PIN. Guards can read the board and report — post to Patrol Chat, scan checkpoints, log trucks and attach photos. Supervisors and Admins add the roster, post directory, these accounts and the data reset. <b>Account types:</b> Admin and Supervisor accounts see every tab; Dispatch sees Live Map, Dispatch, S.C.I.C., Call History, Patrol Chat, Users and Radio PTT; Guards see Dispatch, Call History, Field Reports, Parking Lot Violations, Guard Notes, Patrol Tours, Users, Radio PTT, Patrol Chat and Truck Log. Admin and Dispatch see every site; Admins can preview any other account type with <b>View As</b> in the sidebar. Supervisors and Guards only see records for the sites they are assigned to: a Supervisor <b>Assigned site</b> below, plus the Assigned Sites on their unit in the Units tab.</div>';
+    '<div class="small-muted" style="margin-bottom:14px;">Every account signs in with a callsign and a PIN. Guards can read the board and report — talk on Radio PTT, scan checkpoints, log trucks and attach photos. Supervisors and Admins add the roster, post directory, these accounts and the data reset. <b>Account types:</b> Admin and Supervisor accounts see every tab; Dispatch sees Live Map, Dispatch, S.C.I.C., Call History, Dispatch Transcripts, Users and Radio PTT; Guards see Dispatch, Call History, Field Reports, Parking Lot Violations, Guard Notes, Patrol Tours, S.C.I.C., Users, Radio PTT and Truck Log. Dispatch Transcripts is only visible to Supervisor, Admin and Dispatch accounts. Admin and Dispatch see every site; Admins can preview any other account type with <b>View As</b> in the sidebar. Supervisors and Guards only see records for the sites they are assigned to: a Supervisor <b>Assigned site</b> below, plus the Assigned Sites on their unit in the Units tab.</div>';
   html += visibleUsers.map(function(u){
     var mapAccess = "";
     if(u.role==="SUPV"){
@@ -2768,7 +2902,7 @@ function renderScic(){
     '</div>'+
     '<div class="small-muted" style="margin-top:6px;">A reason is required for every S.C.I.C. search. Trespass searches must also be linked to an active dispatch call.</div>'+
     '<div style="display:flex;gap:8px;margin-top:8px;"><button type="submit" class="btn sm primary" id="scicSearchBtn" disabled>Search</button><button type="button" class="btn sm" id="scicSearchClear">Clear search</button></div></form>';
-  html += '<div class="small-muted" style="margin-bottom:10px;">Combines Trespass Reports and Parking Lot Violations. Restricted to guards and supervisors, scoped to the site(s) you are assigned to — never other sites.</div>';
+  html += '<div class="small-muted" style="margin-bottom:10px;">Combines Trespass Reports and Parking Lot Violations. Guards and supervisors only see the site(s) they are assigned to — never other sites.</div>';
   if(!searched){ html += '<div class="empty-state">No records are shown until a search is run. Enter a vehicle plate # or a person&#39;s name, select a reason, and press Search.</div>'; }
   else if(!filtered.length){ html += '<div class="empty-state">No matching S.C.I.C. records.</div>'; }
   else {

@@ -1,8 +1,8 @@
 # Ridgecrest CAD
 
 Browser-based computer-aided dispatch console for Ridgecrest Threat Advisory security
-operations — dispatch/calls, guard & unit roster, post directory & patrol tours, patrol
-chat, truck/gate log, parking lot violations, field reports, and an activity log.
+operations — dispatch/calls, guard & unit roster, post directory & patrol tours, Radio PTT
+(Dispatch channel) with transcripts, truck/gate log, parking lot violations, field reports, and an activity log.
 
 Plain static HTML/CSS/JS (no build step, no framework) backed by [Supabase](https://supabase.com)
 for the database and realtime sync, deployed on [Vercel](https://vercel.com).
@@ -31,7 +31,7 @@ Row Level Security policies that actually gate access, not keeping that key secr
 ## Editing the app
 
 `src/app.js`, `src/part2.js`, and `src/part3.js` are the source files (login/shell,
-dispatch/units/posts/chat/trucks, and parking/reports/users respectively). They're
+dispatch/units/posts/radio & transcripts/trucks, and parking/reports/users respectively). They're
 designed to share one JS closure, so they get spliced into a single
 `src/app.bundle.js` — that's the file `index.html` actually loads. **After editing
 any of the three source files, run `src/build.sh` to regenerate the bundle before

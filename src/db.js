@@ -173,6 +173,10 @@ re-publishing the entire app state on every change. */
    manages from the Units tab. Separate from units.post, which is the ONE site a guard is
    currently working this shift (self-selectable, or set by a supervisor). */
  function unitSiteFromRow(r){ return {callsign:r.callsign, postId:r.post_id}; }
+ function transcriptFromRow(r){ return {id:r.id, at:r.at, endedAt:r.ended_at, channel:r.channel||"dispatch",
+                                         callsign:r.callsign||"", name:r.name||"", post:r.post||"", text:r.text||""}; }
+ function transcriptToRow(t){ return {id:t.id, at:t.at, ended_at:t.endedAt||null, channel:t.channel||"dispatch",
+                                       callsign:t.callsign||"", name:t.name||"", post:t.post||"", text:t.text||""}; }
 
  /* ---------- load everything into the STATE shape the UI expects ---------- */
  async function loadAllState(){
@@ -184,8 +188,10 @@ re-publishing the entire app state on every change. */
              sb.from("checkpoints").select("*"),
              sb.from("calls").select("*").order("created_at",{ascending:false}),
              sb.from("call_supplements").select("*").order("at",{ascending:true}),
-             sb.from("chat_channels").select("*"),
-             sb.from("chat_messages").select("*").order("at",{ascending:true}),
+             // Slots 6/7 used to be chat_channels/chat_messages (Patrol Chat, now retired). Slot 6
+             // now holds Dispatch radio transcripts; slot 7 is a no-op so the indexes below stay put.
+             sb.from("radio_transcripts").select("*").order("at",{ascending:false}).limit(5000),
+             Promise.resolve({data:[], error:null}),
              sb.from("trucks").select("*").order("time_in",{ascending:false}),
              sb.from("reports").select("*"),
              sb.from("parking_violations").select("*"),
@@ -205,7 +211,7 @@ re-publishing the entire app state on every change. */
            ]);
       results.forEach(chk);
       var users = results[0].data, units = results[1].data, posts = results[2].data, checkpoints = results[3].data,
-             calls = results[4].data, supplements = results[5].data, channels = results[6].data, messages = results[7].data,
+             calls = results[4].data, supplements = results[5].data, transcripts = results[6].data,
              trucks = results[8].data, reports = results[9].data, pvs = results[10].data, police = results[11].data,
              activity = results[12].data, counters = results[13].data, scans = results[14].data, liveLocs = results[15].data,
              tours = results[16].data, tourPoints = results[17].data, tourAssignments = results[18].data, tourScans = results[19].data,
@@ -233,9 +239,8 @@ re-publishing the entire app state on every change. */
             posts: postsOut,
             calls: callsOut,
             callSeq: counterMap.call||0,
-            chat: { channels: channels.map(function(c){return {id:c.id,name:c.name,desc:c.description||""};}), messages: messages.map(function(m){
-                     return {channel:m.channel_id, from:m.from_callsign||"", name:m.name||"", bolo:!!m.bolo, text:m.text, at:m.at};
-            })},
+            // Dispatch Transcripts: one row per Radio PTT transmission, newest first.
+            radioTranscripts: transcripts.map(transcriptFromRow),
             trucks: trucks.map(truckFromRow),
             reportSeq: counterMap.report||0,
             reports: reports.map(reportFromRow),
@@ -341,9 +346,9 @@ re-publishing the entire app state on every change. */
                           ]);
         }
       },
-      chat: {
-             addChannel: function(ch){ return insertRow("chat_channels", {id:ch.id, name:ch.name, description:ch.desc||""}); },
-             addMessage: function(m){ return insertRow("chat_messages", {channel_id:m.channel, from_callsign:m.from||"", name:m.name||"", bolo:!!m.bolo, text:m.text, at:m.at}); }
+      /* Dispatch Transcripts — written by the talking unit's own browser when they release Talk. */
+      transcripts: {
+             insert: function(t){ return insertRow("radio_transcripts", transcriptToRow(t)); }
       },
       /* One row per callsign — upsert overwrites it each ping, so this table always holds only the
       latest known position (checkpoint_scans keeps the permanent history). Feeds the Live Map tab. */
@@ -402,10 +407,9 @@ re-publishing the entire app state on every change. */
              scanPoint: function(s){ return insertRow("tour_point_scans", tourScanToRow(s)); }
       },
 
-      /* Radio PTT: no new tables — voice is live peer-to-peer WebRTC, signalled entirely over a
-      Supabase Realtime channel (broadcast for offer/answer/ICE, presence for who is on the
-      channel right now). This just exposes a raw channel handle since nothing here needs to be
-      persisted to Postgres. */
+      /* Radio PTT: voice is live peer-to-peer WebRTC, signalled entirely over a Supabase Realtime
+      channel (broadcast for offer/answer/ICE, presence for who is on the channel right now). The
+      audio itself is never stored; only the text transcript goes to radio_transcripts (above). */
       radio: {
             channel: function(name, opts){ if(!sb) return null; return sb.channel(name, opts||{}); }
       },
@@ -433,7 +437,7 @@ re-publishing the entire app state on every change. */
       table name whenever a row changes; callers typically refetch that slice and re-render. */
       subscribeRealtime: function(onChange){
              if(!sb) return null;
-             var tables = ["units","posts","unit_sites","calls","call_supplements","chat_messages","trucks","reports","parking_violations","police_on_property","guard_notes","checkpoints","activity_log","checkpoint_scans","guard_locations",
+             var tables = ["units","posts","unit_sites","calls","call_supplements","radio_transcripts","trucks","reports","parking_violations","police_on_property","guard_notes","checkpoints","activity_log","checkpoint_scans","guard_locations",
                                  "patrol_tours","patrol_tour_points","tour_assignments","tour_point_scans","scic_entries","scic_search_log"];
              var channel = sb.channel("cad-live");
              tables.forEach(function(t){

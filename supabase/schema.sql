@@ -634,3 +634,31 @@ begin
     alter publication supabase_realtime add table scic_search_log;
   end if;
 end $$;
+
+-- ---------- Dispatch radio transcripts (src/part2.js Radio PTT / Dispatch Transcripts) ----------
+create table if not exists radio_transcripts (
+  id text primary key default gen_random_uuid()::text,  -- text, so the app's own uid() ids fit
+  at timestamptz not null default now(),        -- when the unit keyed up (pressed Talk)
+  ended_at timestamptz,                          -- when they released Talk
+  channel text not null default 'dispatch',
+  callsign text not null default '',             -- unit / callsign that was talking
+  name text not null default '',                 -- account name of the person talking
+  post text default '',                          -- the unit's shift site at the time, if any
+  text text not null default ''
+);
+create index if not exists radio_transcripts_at_idx on radio_transcripts(at desc);
+create index if not exists radio_transcripts_callsign_idx on radio_transcripts(callsign);
+
+alter table radio_transcripts enable row level security;
+drop policy if exists anon_all on radio_transcripts;
+create policy anon_all on radio_transcripts for all to anon, authenticated using (true) with check (true);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'radio_transcripts'
+  ) then
+    alter publication supabase_realtime add table radio_transcripts;
+  end if;
+end $$;
