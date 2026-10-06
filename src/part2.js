@@ -57,7 +57,8 @@ C.UNIT_STATUSES.map(function(s){ return '<option value="'+s[0]+'" '+(s[0]===u.st
 });
 
 html += '<div class="small-muted" style="margin:14px 0 6px;text-transform:uppercase;letter-spacing:.05em;">Live Log</div><div style="max-height:260px;overflow-y:auto;">';
-  html += STATE.activityLog.filter(activityVisible).slice(0,12).map(function(l){
+  // Daily Activity Report entries stay in the Activity Log (Supervisor/Admin) — not the Live Log guards see.
+  html += STATE.activityLog.filter(function(l){ return activityVisible(l) && (l.type!=="DAR" || canSeeRoute("log")); }).slice(0,12).map(function(l){
     return '<div style="padding:5px 0;border-bottom:1px solid hsl(var(--border)/.4);font-size:11px;"><span class="small-muted">'+fmtShort(l.at)+'</span> '+escapeHtml(l.text)+'</div>';
   }).join("");
   html += '</div></div>';
@@ -152,6 +153,7 @@ wireCallModal();
       var cs=sel.getAttribute("data-unit"); var u=STATE.units.find(function(x){return x.callsign===cs;});
       var from=u.status; u.status=sel.value; u.statusSince=nowIso();
       logActivity("UNIT","DISPATCH","Unit "+cs+" status "+from+" → "+sel.value);
+      recordUnitStatus(u, from, u.status);
       persist(function(){ return DB.units.update(cs, {status:u.status, status_since:u.statusSince}); }, "unit "+cs+" status");
     });
   });
@@ -190,6 +192,7 @@ document.querySelectorAll("[data-open-call]").forEach(function(el){
           if(u && u.status!==to){
             var ufrom=u.status; u.status=to; u.statusSince=nowIso();
             logActivity("UNIT","DISPATCH","Unit "+cs+" status "+ufrom+" → "+to);
+            recordUnitStatus(u, ufrom, to, id);
             unitWrites.push(DB.units.update(cs, {status:to, status_since:u.statusSince}));
           }
         });
@@ -201,6 +204,7 @@ document.querySelectorAll("[data-open-call]").forEach(function(el){
                            if(u && u.status!=="AVAILABLE"){
                              var ufrom=u.status; u.status="AVAILABLE"; u.statusSince=nowIso();
                              logActivity("UNIT","DISPATCH","Unit "+cs+" status "+ufrom+" → AVAILABLE");
+                             recordUnitStatus(u, ufrom, "AVAILABLE", id);
                              unitWrites.push(DB.units.update(cs, {status:"AVAILABLE", status_since:u.statusSince}));
                            }
                          });
@@ -219,7 +223,8 @@ document.querySelectorAll("[data-open-call]").forEach(function(el){
       if(!u || u.status!=="AVAILABLE") return;
       c.assignedUnits = c.assignedUnits || [];
       if(c.assignedUnits.indexOf(cs)===-1) c.assignedUnits.push(cs);
-      u.status="DISPATCHED"; u.statusSince=nowIso();
+      var afrom=u.status; u.status="DISPATCHED"; u.statusSince=nowIso();
+      recordUnitStatus(u, afrom, "DISPATCHED", id);
       if(c.status==="PENDING") c.status="DISPATCHED";
                        logActivity("INCIDENT", session.callsign, "Unit "+cs+" dispatched to "+id);
       logActivity("UNIT", "DISPATCH", "Unit "+cs+" status AVAILABLE → DISPATCHED");
@@ -236,7 +241,7 @@ document.querySelectorAll('[data-action="unassignUnit"]').forEach(function(b){
     var c=STATE.calls.find(function(x){return x.id===id;});
     c.assignedUnits = (c.assignedUnits||[]).filter(function(x){return x!==cs;});
     var u = STATE.units.find(function(x){return x.callsign===cs;});
-    if(u){ u.status="AVAILABLE"; u.statusSince=nowIso(); }
+    if(u){ var rfrom=u.status; u.status="AVAILABLE"; u.statusSince=nowIso(); recordUnitStatus(u, rfrom, "AVAILABLE", id); }
     logActivity("INCIDENT", session.callsign, "Unit "+cs+" removed from "+id);
     if(u) logActivity("UNIT","DISPATCH","Unit "+cs+" status → AVAILABLE");
     persist(function(){ return Promise.all([
@@ -911,7 +916,8 @@ function wireTrucks(){
     var post = STATE.posts.find(function(p){return p.id===postId;});
     var t = {id:uid("trk"), company:fd.get("company"), driver:fd.get("driver"), trailer:fd.get("trailer"), tractor:fd.get("tractor")||"",
              post: postId?(postId+" "+(post?post.name:"")):"", purpose:fd.get("purpose"), dock:fd.get("dock")||"", seal:fd.get("seal")||"",
-             bol:fd.get("bol")||"", license:fd.get("license")||"", notes:fd.get("notes")||"", timeIn:nowIso(), timeOut:null};
+             bol:fd.get("bol")||"", license:fd.get("license")||"", notes:fd.get("notes")||"", timeIn:nowIso(), timeOut:null,
+             loggedBy:session.callsign, checkedOutBy:""};
     STATE.trucks.unshift(t);
     logActivity("TRUCK", session.callsign, "Truck IN — "+t.company+" / driver "+t.driver+" / trailer "+t.trailer+(postId?" @ "+postId:""));
     form.reset(); persist(function(){ return DB.trucks.insert(t); }, "truck "+t.company);
@@ -919,10 +925,10 @@ function wireTrucks(){
   document.querySelectorAll("[data-truck-out]").forEach(function(b){
     b.addEventListener("click", function(){
       var t = STATE.trucks.find(function(x){return x.id===b.getAttribute("data-truck-out");});
-      t.timeOut = nowIso();
+      t.timeOut = nowIso(); t.checkedOutBy = session.callsign;
       var mins = Math.round((new Date(t.timeOut)-new Date(t.timeIn))/60000);
       logActivity("TRUCK", session.callsign, "Truck OUT — "+t.company+" / driver "+t.driver+" / trailer "+t.trailer+" — on site "+mins+"m");
-      persist(function(){ return DB.trucks.checkOut(t.id, t.timeOut); }, "truck "+t.company+" checkout");
+      persist(function(){ return DB.trucks.update(t.id, {time_out:t.timeOut, checked_out_by:t.checkedOutBy}); }, "truck "+t.company+" checkout");
     });
   });
   document.querySelectorAll("[data-truck-dock]").forEach(function(b){
