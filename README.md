@@ -20,6 +20,19 @@ for the database and realtime sync, deployed on [Vercel](https://vercel.com).
 5. Sign in with any seeded callsign (`S-1` is the supervisor, `ST2-61` a guard) and
    PIN `1234`. Change it from the Users page — see the security note below.
 
+## Daily Activity Reports
+
+When a unit's status is set to **10-42 Off Duty**, the CAD automatically generates a Daily
+Activity Report for that shift: unit number, name, site, on-duty and off-duty times, each call
+(dispatched / arrived on scene / back in service), field reports, parking violations and truck
+log entries the unit made, with times. Reports appear at the top of the **Activity Log** tab
+(Supervisor and Admin accounts only; Supervisors see their assigned sites) with Print and CSV.
+
+Existing databases: run `supabase/migrations/20261006_daily_activity_reports.sql` in the
+Supabase SQL editor **before** deploying this version. On-duty times come from the unit status
+history that migration starts recording, so the first shift after deploying may show an
+approximate on-duty time.
+
 ## Deploying to Vercel
 
 This is a zero-config static site: point a new Vercel project at this repo with no

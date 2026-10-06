@@ -776,7 +776,8 @@ C.UNIT_STATUSES.map(function(s){ return '<option value="'+s[0]+'" '+(s[0]===u.st
 });
 
 html += '<div class="small-muted" style="margin:14px 0 6px;text-transform:uppercase;letter-spacing:.05em;">Live Log</div><div style="max-height:260px;overflow-y:auto;">';
-  html += STATE.activityLog.filter(activityVisible).slice(0,12).map(function(l){
+  // Daily Activity Report entries stay in the Activity Log (Supervisor/Admin) — not the Live Log guards see.
+  html += STATE.activityLog.filter(function(l){ return activityVisible(l) && (l.type!=="DAR" || canSeeRoute("log")); }).slice(0,12).map(function(l){
     return '<div style="padding:5px 0;border-bottom:1px solid hsl(var(--border)/.4);font-size:11px;"><span class="small-muted">'+fmtShort(l.at)+'</span> '+escapeHtml(l.text)+'</div>';
   }).join("");
   html += '</div></div>';
@@ -871,6 +872,7 @@ wireCallModal();
       var cs=sel.getAttribute("data-unit"); var u=STATE.units.find(function(x){return x.callsign===cs;});
       var from=u.status; u.status=sel.value; u.statusSince=nowIso();
       logActivity("UNIT","DISPATCH","Unit "+cs+" status "+from+" → "+sel.value);
+      recordUnitStatus(u, from, u.status);
       persist(function(){ return DB.units.update(cs, {status:u.status, status_since:u.statusSince}); }, "unit "+cs+" status");
     });
   });
@@ -909,6 +911,7 @@ document.querySelectorAll("[data-open-call]").forEach(function(el){
           if(u && u.status!==to){
             var ufrom=u.status; u.status=to; u.statusSince=nowIso();
             logActivity("UNIT","DISPATCH","Unit "+cs+" status "+ufrom+" → "+to);
+            recordUnitStatus(u, ufrom, to, id);
             unitWrites.push(DB.units.update(cs, {status:to, status_since:u.statusSince}));
           }
         });
@@ -920,6 +923,7 @@ document.querySelectorAll("[data-open-call]").forEach(function(el){
                            if(u && u.status!=="AVAILABLE"){
                              var ufrom=u.status; u.status="AVAILABLE"; u.statusSince=nowIso();
                              logActivity("UNIT","DISPATCH","Unit "+cs+" status "+ufrom+" → AVAILABLE");
+                             recordUnitStatus(u, ufrom, "AVAILABLE", id);
                              unitWrites.push(DB.units.update(cs, {status:"AVAILABLE", status_since:u.statusSince}));
                            }
                          });
@@ -938,7 +942,8 @@ document.querySelectorAll("[data-open-call]").forEach(function(el){
       if(!u || u.status!=="AVAILABLE") return;
       c.assignedUnits = c.assignedUnits || [];
       if(c.assignedUnits.indexOf(cs)===-1) c.assignedUnits.push(cs);
-      u.status="DISPATCHED"; u.statusSince=nowIso();
+      var afrom=u.status; u.status="DISPATCHED"; u.statusSince=nowIso();
+      recordUnitStatus(u, afrom, "DISPATCHED", id);
       if(c.status==="PENDING") c.status="DISPATCHED";
                        logActivity("INCIDENT", session.callsign, "Unit "+cs+" dispatched to "+id);
       logActivity("UNIT", "DISPATCH", "Unit "+cs+" status AVAILABLE → DISPATCHED");
@@ -955,7 +960,7 @@ document.querySelectorAll('[data-action="unassignUnit"]').forEach(function(b){
     var c=STATE.calls.find(function(x){return x.id===id;});
     c.assignedUnits = (c.assignedUnits||[]).filter(function(x){return x!==cs;});
     var u = STATE.units.find(function(x){return x.callsign===cs;});
-    if(u){ u.status="AVAILABLE"; u.statusSince=nowIso(); }
+    if(u){ var rfrom=u.status; u.status="AVAILABLE"; u.statusSince=nowIso(); recordUnitStatus(u, rfrom, "AVAILABLE", id); }
     logActivity("INCIDENT", session.callsign, "Unit "+cs+" removed from "+id);
     if(u) logActivity("UNIT","DISPATCH","Unit "+cs+" status → AVAILABLE");
     persist(function(){ return Promise.all([
@@ -1630,7 +1635,8 @@ function wireTrucks(){
     var post = STATE.posts.find(function(p){return p.id===postId;});
     var t = {id:uid("trk"), company:fd.get("company"), driver:fd.get("driver"), trailer:fd.get("trailer"), tractor:fd.get("tractor")||"",
              post: postId?(postId+" "+(post?post.name:"")):"", purpose:fd.get("purpose"), dock:fd.get("dock")||"", seal:fd.get("seal")||"",
-             bol:fd.get("bol")||"", license:fd.get("license")||"", notes:fd.get("notes")||"", timeIn:nowIso(), timeOut:null};
+             bol:fd.get("bol")||"", license:fd.get("license")||"", notes:fd.get("notes")||"", timeIn:nowIso(), timeOut:null,
+             loggedBy:session.callsign, checkedOutBy:""};
     STATE.trucks.unshift(t);
     logActivity("TRUCK", session.callsign, "Truck IN — "+t.company+" / driver "+t.driver+" / trailer "+t.trailer+(postId?" @ "+postId:""));
     form.reset(); persist(function(){ return DB.trucks.insert(t); }, "truck "+t.company);
@@ -1638,10 +1644,10 @@ function wireTrucks(){
   document.querySelectorAll("[data-truck-out]").forEach(function(b){
     b.addEventListener("click", function(){
       var t = STATE.trucks.find(function(x){return x.id===b.getAttribute("data-truck-out");});
-      t.timeOut = nowIso();
+      t.timeOut = nowIso(); t.checkedOutBy = session.callsign;
       var mins = Math.round((new Date(t.timeOut)-new Date(t.timeIn))/60000);
       logActivity("TRUCK", session.callsign, "Truck OUT — "+t.company+" / driver "+t.driver+" / trailer "+t.trailer+" — on site "+mins+"m");
-      persist(function(){ return DB.trucks.checkOut(t.id, t.timeOut); }, "truck "+t.company+" checkout");
+      persist(function(){ return DB.trucks.update(t.id, {time_out:t.timeOut, checked_out_by:t.checkedOutBy}); }, "truck "+t.company+" checkout");
     });
   });
   document.querySelectorAll("[data-truck-dock]").forEach(function(b){
@@ -2191,15 +2197,253 @@ document.querySelectorAll("[data-gn-reopen]").forEach(function(b){
   });
 }
 
+/* ---------------- DAILY ACTIVITY REPORTS ----------------
+   Every unit status change is recorded in unit_status_events (recordUnitStatus, called from the
+   Dispatch tab's status dropdown and the call modal in part2.js). When a unit goes "10-42 Off Duty"
+   (ENDSHIFT), the browser that made that change builds a Daily Activity Report for the shift that
+   just ended and saves it to daily_activity_reports. Reports are listed in the Activity Log tab,
+   which only Supervisor and Admin accounts can open (roleNav in app.js); Supervisors only see
+   reports for their assigned site(s). */
+var DAR_MAX_SHIFT_MS = 16*3600*1000; // look-back when no earlier "Off Duty" marks where the shift began
+function msOf(iso){ return iso ? new Date(iso).getTime() : 0; }
+function unitOpenCallId(cs){
+  var open = STATE.calls.filter(function(c){ return c.status!=="CLEARED" && (c.assignedUnits||[]).indexOf(cs)!==-1; })
+    .sort(function(a,b){ return msOf(b.createdAt)-msOf(a.createdAt); });
+  return open.length ? open[0].id : "";
+}
+/* Call right after changing u.status (and u.statusSince). callId is the call the change was made
+   from; when omitted, the unit's open assigned call (if any) is used. */
+function recordUnitStatus(u, from, to, callId){
+  if(!u || from===to) return;
+  STATE.unitStatusEvents = STATE.unitStatusEvents || [];
+  var ev = {id:uid("use"), callsign:u.callsign, at:u.statusSince||nowIso(), from:from||"", to:to,
+            callId: callId || unitOpenCallId(u.callsign), post:u.post||"", changedBy: session ? session.callsign : ""};
+  STATE.unitStatusEvents.unshift(ev);
+  queueWrite(function(){ return DB.statusEvents.insert(ev); }, "status history for "+u.callsign);
+  if(to==="ENDSHIFT") generateDailyActivityReport(u, ev);
+}
+/* Status changes logged before unit_status_events existed only live in the activity log text
+   ("Unit ST2-61 status ENDSHIFT → AVAILABLE"). Used only to find an on-duty time from before the
+   status history started being recorded. */
+function legacyStatusEvents(cs){
+  var re = /^Unit (\S+) status (?:(\S+) )?→ (\S+)$/;
+  return (STATE.activityLog||[]).map(function(l){
+    if(l.type!=="UNIT") return null;
+    var m = re.exec(l.text||"");
+    if(!m || m[1]!==cs) return null;
+    return {at:l.at, from:m[2]||"", to:m[3], callId:"", legacy:true};
+  }).filter(Boolean);
+}
+function buildDailyActivityReport(u, offEv){
+  var cs = u.callsign, offAt = offEv.at, offMs = msOf(offAt);
+  var ids = [cs]; if(u.homeCallsign && ids.indexOf(u.homeCallsign)===-1) ids.push(u.homeCallsign);
+  var evs = (STATE.unitStatusEvents||[]).filter(function(e){ return e.callsign===cs && e.id!==offEv.id && msOf(e.at)<=offMs; });
+  var earliest = evs.reduce(function(m,e){ return Math.min(m, msOf(e.at)); }, Infinity);
+  var legacy = legacyStatusEvents(cs).filter(function(e){ return msOf(e.at)<=offMs && msOf(e.at)<earliest; });
+  var all = evs.concat(legacy).sort(function(a,b){ return msOf(a.at)-msOf(b.at); });
+
+  // On duty = the first status change after this unit last went Off Duty.
+  var lastEnd = -1;
+  all.forEach(function(e,i){ if(e.to==="ENDSHIFT") lastEnd = i; });
+  var after = all.slice(lastEnd+1);
+  if(lastEnd<0) after = after.filter(function(e){ return offMs-msOf(e.at) <= DAR_MAX_SHIFT_MS; });
+  var onDutyAt = after.length ? after[0].at : null;
+  var onDutyEstimated = !onDutyAt || (lastEnd<0 && after[0].from!=="ENDSHIFT" && after[0].from!=="OFFDUTY");
+  var startMs = onDutyAt ? msOf(onDutyAt) : offMs-DAR_MAX_SHIFT_MS;
+  function inShift(iso){ var t = msOf(iso); return !!iso && t>=startMs && t<=offMs; }
+  var shiftEvs = after.filter(function(e){ return inShift(e.at); }).concat([offEv]);
+
+  // Calls: any call this unit had a status change on during the shift, or was assigned to that was created during it.
+  var callIds = [];
+  shiftEvs.forEach(function(e){ if(e.callId && callIds.indexOf(e.callId)===-1) callIds.push(e.callId); });
+  STATE.calls.forEach(function(c){ if((c.assignedUnits||[]).indexOf(cs)!==-1 && inShift(c.createdAt) && callIds.indexOf(c.id)===-1) callIds.push(c.id); });
+  var calls = callIds.map(function(id){
+    var c = STATE.calls.find(function(x){ return x.id===id; }) || {id:id};
+    var ce = shiftEvs.filter(function(e){ return e.callId===id; });
+    function first(st){ var f = ce.find(function(e){ return e.to===st; }); return f ? f.at : null; }
+    var dispatchedAt = first("DISPATCHED"), enrouteAt = first("ENROUTE"), onSceneAt = first("ONSCENE");
+    var ref = msOf(onSceneAt || enrouteAt || dispatchedAt);
+    var back = ce.find(function(e){ return e.to==="AVAILABLE" && msOf(e.at)>=ref; });
+    return {id:id, code:c.code||"", nature:c.nature||"", post:c.post||"", priority:c.priority||null, createdAt:c.createdAt||null,
+            dispatchedAt:dispatchedAt, enrouteAt:enrouteAt, onSceneAt:onSceneAt, backInServiceAt: back ? back.at : null,
+            wentOffDutyFromCall: !back && offEv.callId===id};
+  }).sort(function(a,b){ return msOf(a.dispatchedAt||a.onSceneAt||a.createdAt) - msOf(b.dispatchedAt||b.onSceneAt||b.createdAt); });
+
+  function mine(r){ return ids.indexOf(r.writtenByCallsign)!==-1 && r.status!=="DRAFT" && inShift(r.submittedAt||r.occurred); }
+  var reports = (STATE.reports||[]).filter(mine).map(function(r){
+    return {id:r.id, typeLabel:r.typeLabel||r.type||"", subject:r.subject||"", post:r.post||"", occurred:r.occurred||null, submittedAt:r.submittedAt||null};
+  }).sort(function(a,b){ return msOf(a.submittedAt||a.occurred)-msOf(b.submittedAt||b.occurred); });
+  var parking = (STATE.parkingViolations||[]).filter(mine).map(function(v){
+    var tl = (VIOLATION_TYPES.find(function(t){ return t[0]===v.vtype; })||["",v.vtype])[1];
+    return {id:v.id, typeLabel:tl||"", plate:v.plate||"", plateState:v.plateState||"", actionTaken:v.actionTaken||"", post:v.post||"",
+            occurred:v.occurred||null, submittedAt:v.submittedAt||null};
+  }).sort(function(a,b){ return msOf(a.submittedAt||a.occurred)-msOf(b.submittedAt||b.occurred); });
+  var trucks = [];
+  (STATE.trucks||[]).forEach(function(t){
+    var base = {id:t.id, company:t.company||"", driver:t.driver||"", trailer:t.trailer||"", post:t.post||"", purpose:t.purpose||""};
+    if(ids.indexOf(t.loggedBy)!==-1 && inShift(t.timeIn)) trucks.push(Object.assign({action:"Checked in", at:t.timeIn}, base));
+    if(ids.indexOf(t.checkedOutBy)!==-1 && inShift(t.timeOut)) trucks.push(Object.assign({action:"Checked out", at:t.timeOut}, base));
+  });
+  trucks.sort(function(a,b){ return msOf(a.at)-msOf(b.at); });
+
+  var postId = u.post || offEv.post || (shiftEvs.slice().reverse().find(function(e){ return e.post; })||{}).post || "";
+  var post = STATE.posts.find(function(p){ return p.id===postId; });
+  var acct = u.homeCallsign ? STATE.users.find(function(x){ return x.callsign===u.homeCallsign; }) : null;
+  return {
+    id: "DAR-"+todayCode()+"-"+String(cs).replace(/[^A-Za-z0-9-]/g,"")+"-"+Math.random().toString(36).slice(2,6).toUpperCase(),
+    createdAt: nowIso(), callsign: cs, accountCallsign: u.homeCallsign||"", name: u.name || (acct ? acct.name : ""),
+    postId: postId, postName: post ? post.name : "", onDutyAt: onDutyAt, offDutyAt: offAt,
+    generatedBy: session ? session.callsign : "",
+    data: {unitType:u.type||"", shift:u.shift||"", accountName: acct ? acct.name : "", onDutyEstimated:onDutyEstimated,
+           calls:calls, reports:reports, parking:parking, trucks:trucks}
+  };
+}
+function generateDailyActivityReport(u, offEv){
+  var d;
+  try{ d = buildDailyActivityReport(u, offEv); }
+  catch(e){ console.error("Daily Activity Report failed", e); toast("Couldn't build the Daily Activity Report for "+u.callsign+"."); return; }
+  STATE.dailyActivityReports = STATE.dailyActivityReports || [];
+  STATE.dailyActivityReports.unshift(d);
+  var x = d.data;
+  logActivity("DAR", session ? session.callsign : "SYSTEM", "DAILY ACTIVITY REPORT "+d.id+" — Unit "+d.callsign+" ("+d.name+") went 10-42 Off Duty"+
+    (d.postId ? " @ "+d.postId : "")+" · "+x.calls.length+" calls, "+x.reports.length+" reports, "+x.parking.length+" parking violations, "+x.trucks.length+" truck log entries");
+  queueWrite(function(){ return DB.dailyReports.insert(d); }, "daily activity report "+d.id);
+  toast("Daily Activity Report generated for "+d.callsign+".");
+}
+function darVisible(d){
+  if(!session || !canSeeRoute("log")) return false;
+  if(d.callsign===session.callsign || d.accountCallsign===session.callsign) return true;
+  var ids = guardVisiblePostIds();
+  return !ids || (!!d.postId && ids.indexOf(d.postId)!==-1);
+}
+function darDuration(d){
+  if(!d.onDutyAt) return "—";
+  var m = Math.max(0, Math.round((msOf(d.offDutyAt)-msOf(d.onDutyAt))/60000));
+  return Math.floor(m/60)+"h "+pad(m%60)+"m";
+}
+function renderDarList(){
+  var all = (STATE.dailyActivityReports||[]).filter(darVisible);
+  var q = (uiState.darSearch||"").trim().toLowerCase(), day = uiState.darDate||"";
+  var list = all.filter(function(d){
+    if(q && (d.callsign+" "+d.name+" "+d.postId+" "+d.postName).toLowerCase().indexOf(q)===-1) return false;
+    if(day){ var o = new Date(d.offDutyAt); var k = o.getFullYear()+"-"+pad(o.getMonth()+1)+"-"+pad(o.getDate()); if(k!==day) return false; }
+    return true;
+  });
+  var shown = uiState.darShowAll ? list : list.slice(0,25);
+  var html = '<div class="card" style="margin-bottom:16px;"><div class="section-head"><h2>Daily Activity Reports <span class="meta">'+list.length+'</span></h2>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;"><input type="text" id="darSearch" placeholder="Unit, name or site" value="'+escapeHtml(uiState.darSearch||"")+'" style="width:170px;">'+
+    '<input type="date" id="darDate" value="'+escapeHtml(day)+'" style="width:auto;">'+
+    ((q||day) ? '<button class="btn sm ghost" data-action="darClear">Clear</button>' : '')+'</div></div>'+
+    '<div class="small-muted" style="margin-bottom:8px;">Generated automatically when a unit is set to 10-42 Off Duty.</div>';
+  if(!shown.length){
+    html += '<div class="empty-state">'+(all.length ? "No reports match." : "No Daily Activity Reports yet.")+'</div></div>';
+    return html;
+  }
+  html += '<table class="datatable"><thead><tr><th>Off duty</th><th>Unit</th><th>Name</th><th>Site</th><th>On duty</th><th>Calls</th><th>Reports</th><th>Parking</th><th>Trucks</th><th></th></tr></thead><tbody>'+
+    shown.map(function(d){
+      var x = d.data||{};
+      return '<tr><td class="mono small-muted" style="white-space:nowrap;">'+fmtDT(d.offDutyAt)+'</td><td class="mono">'+escapeHtml(d.callsign)+'</td><td>'+escapeHtml(d.name)+'</td>'+
+        '<td>'+escapeHtml(d.postId ? d.postId+(d.postName?" — "+d.postName:"") : "—")+'</td><td class="mono small-muted" style="white-space:nowrap;">'+fmtDT(d.onDutyAt)+'</td>'+
+        '<td>'+(x.calls||[]).length+'</td><td>'+(x.reports||[]).length+'</td><td>'+(x.parking||[]).length+'</td><td>'+(x.trucks||[]).length+'</td>'+
+        '<td><button class="btn sm" data-open-dar="'+escapeHtml(d.id)+'">View</button></td></tr>';
+    }).join("")+'</tbody></table>'+
+    (list.length>25 ? '<div style="margin-top:8px;"><button class="btn sm ghost" data-action="darToggleAll">'+(uiState.darShowAll?"Show recent only":"Show all "+list.length)+'</button></div>' : '')+
+    '</div>';
+  return html;
+}
+function darSection(title, cols, rows){
+  return '<div class="field-block"><div class="k">'+escapeHtml(title)+' ('+rows.length+')</div>'+
+    (rows.length ? '<table class="datatable"><thead><tr>'+cols.map(function(c){ return '<th>'+escapeHtml(c)+'</th>'; }).join("")+'</tr></thead><tbody>'+
+      rows.map(function(r){ return '<tr>'+r.map(function(v){ return '<td>'+v+'</td>'; }).join("")+'</tr>'; }).join("")+'</tbody></table>'
+      : '<div class="small-muted">None this shift.</div>')+'</div>';
+}
+function darTime(iso){ return '<span class="mono" style="white-space:nowrap;">'+fmtDT(iso)+'</span>'; }
+function renderDarModal(d){
+  var x = d.data||{};
+  var calls = (x.calls||[]).map(function(c){
+    return ['<span class="mono">#'+escapeHtml(c.id)+'</span>', escapeHtml(c.nature||c.code||"—"), escapeHtml(c.post||"—"),
+            darTime(c.dispatchedAt), darTime(c.onSceneAt),
+            c.backInServiceAt ? darTime(c.backInServiceAt) : (c.wentOffDutyFromCall ? '<span class="small-muted">Went off duty</span>' : '—')];
+  });
+  var reports = (x.reports||[]).map(function(r){
+    return ['<span class="mono">'+escapeHtml(r.id)+'</span>', escapeHtml(r.typeLabel), escapeHtml(r.subject||"—"), darTime(r.occurred), darTime(r.submittedAt)];
+  });
+  var parking = (x.parking||[]).map(function(v){
+    return ['<span class="mono">'+escapeHtml(v.id)+'</span>', escapeHtml(v.typeLabel), escapeHtml((v.plate||"—")+(v.plateState?" ("+v.plateState+")":"")),
+            escapeHtml(v.actionTaken||"—"), darTime(v.occurred), darTime(v.submittedAt)];
+  });
+  var trucks = (x.trucks||[]).map(function(t){
+    return [darTime(t.at), escapeHtml(t.action), escapeHtml(t.company+(t.driver?" / "+t.driver:"")), escapeHtml(t.trailer||"—"), escapeHtml(t.post||"—")];
+  });
+  return '<div class="modal-backdrop dar-print" data-close-dar="1"><div class="modal" style="max-width:900px;" onclick="event.stopPropagation()">'+
+    '<button class="close dar-noprint" data-action="closeDar">✕</button>'+
+    '<div class="rtaid">'+escapeHtml(d.id)+'</div><h2>Daily Activity Report — '+escapeHtml(d.callsign)+' '+escapeHtml(d.name)+'</h2>'+
+    '<div class="kv-grid">'+
+    '<div><div class="k">Unit</div><div class="v mono">'+escapeHtml(d.callsign)+'</div></div>'+
+    '<div><div class="k">Name</div><div class="v">'+escapeHtml(d.name||"—")+'</div></div>'+
+    '<div><div class="k">Site</div><div class="v">'+escapeHtml(d.postId ? d.postId+(d.postName?" — "+d.postName:"") : "—")+'</div></div>'+
+    '<div><div class="k">On duty</div><div class="v">'+(d.onDutyAt ? fmtDT(d.onDutyAt)+(x.onDutyEstimated?' <span class="small-muted">(approx.)</span>':'') : 'Not recorded')+'</div></div>'+
+    '<div><div class="k">Off duty</div><div class="v">'+fmtDT(d.offDutyAt)+'</div></div>'+
+    '<div><div class="k">Time on duty</div><div class="v">'+darDuration(d)+'</div></div>'+
+    '</div>'+
+    darSection("Calls", ["Call","Type","Site","Dispatched","Arrived on scene","Back in service"], calls)+
+    darSection("Field reports", ["Report","Type","Subject","Occurred","Submitted"], reports)+
+    darSection("Parking violations", ["Violation","Type","Plate","Action taken","Occurred","Submitted"], parking)+
+    darSection("Truck log entries", ["Time","Entry","Company / driver","Trailer","Site"], trucks)+
+    '<div class="small-muted" style="margin-top:10px;">Generated '+fmtDT(d.createdAt)+(d.generatedBy?" by "+escapeHtml(d.generatedBy):"")+'</div>'+
+    '<div class="dar-noprint" style="display:flex;gap:8px;margin-top:14px;"><button class="btn sm primary" data-action="printDar">Print</button>'+
+    '<button class="btn sm" data-action="csvDar" data-dar="'+escapeHtml(d.id)+'">CSV</button><button class="btn sm ghost" data-action="closeDar">Close</button></div>'+
+    '</div></div>';
+}
+function darToCsv(d){
+  var x = d.data||{};
+  var rows = [["Daily Activity Report", d.id], ["Unit", d.callsign], ["Name", d.name], ["Site", d.postId+(d.postName?" — "+d.postName:"")],
+              ["On duty", d.onDutyAt||""], ["Off duty", d.offDutyAt], [],
+              ["Section","ID / Time","Type / Entry","Detail","Site","Time 1","Time 2","Time 3"]];
+  (x.calls||[]).forEach(function(c){ rows.push(["Call", c.id, c.nature||c.code, "", c.post, "Dispatched "+(c.dispatchedAt||""), "On scene "+(c.onSceneAt||""), "Back in service "+(c.backInServiceAt||(c.wentOffDutyFromCall?"went off duty":""))]); });
+  (x.reports||[]).forEach(function(r){ rows.push(["Field report", r.id, r.typeLabel, r.subject, r.post, "Occurred "+(r.occurred||""), "Submitted "+(r.submittedAt||""), ""]); });
+  (x.parking||[]).forEach(function(v){ rows.push(["Parking violation", v.id, v.typeLabel, (v.plate||"")+" "+(v.actionTaken||""), v.post, "Occurred "+(v.occurred||""), "Submitted "+(v.submittedAt||""), ""]); });
+  (x.trucks||[]).forEach(function(t){ rows.push(["Truck log", t.at, t.action, t.company+" / "+t.driver+" / trailer "+t.trailer, t.post, "", "", ""]); });
+  return rows;
+}
+function wireDar(){
+  var s = document.getElementById("darSearch");
+  if(s) s.addEventListener("change", function(){ uiState.darSearch = s.value; render(); });
+  var dd = document.getElementById("darDate");
+  if(dd) dd.addEventListener("change", function(){ uiState.darDate = dd.value; render(); });
+  var clr = document.querySelector('[data-action="darClear"]');
+  if(clr) clr.addEventListener("click", function(){ uiState.darSearch=""; uiState.darDate=""; render(); });
+  var tog = document.querySelector('[data-action="darToggleAll"]');
+  if(tog) tog.addEventListener("click", function(){ uiState.darShowAll = !uiState.darShowAll; render(); });
+  document.querySelectorAll("[data-open-dar]").forEach(function(b){
+    b.addEventListener("click", function(){ uiState.openDarId = b.getAttribute("data-open-dar"); render(); });
+  });
+  function closeDar(){ uiState.openDarId = null; render(); }
+  var bd = document.querySelector("[data-close-dar]"); if(bd) bd.addEventListener("click", closeDar);
+  document.querySelectorAll('[data-action="closeDar"]').forEach(function(b){ b.addEventListener("click", closeDar); });
+  var pr = document.querySelector('[data-action="printDar"]');
+  if(pr) pr.addEventListener("click", function(){
+    document.body.classList.add("print-dar");
+    window.print();
+    setTimeout(function(){ document.body.classList.remove("print-dar"); }, 500);
+  });
+  var csv = document.querySelector('[data-action="csvDar"]');
+  if(csv) csv.addEventListener("click", function(){
+    var d = (STATE.dailyActivityReports||[]).find(function(x){ return x.id===csv.getAttribute("data-dar"); });
+    if(d) downloadCsv(d.id+".csv", darToCsv(d));
+  });
+}
+
 /* ---------------- ACTIVITY LOG ---------------- */
 function renderLog(){
   var C = window.__CAD;
   var list = STATE.activityLog.filter(activityVisible);
-  var html = '<div class="section-head"><h2>Activity Log</h2><span class="meta">'+list.length+' entries</span>'+
+  var html = renderDarList();
+  html += '<div class="section-head"><h2>Activity Log</h2><span class="meta">'+list.length+' entries</span>'+
     '<div style="display:flex;gap:6px;"><button class="btn sm" data-action="logCsv">Log CSV</button></div></div>';
   html += '<div class="card" style="max-height:70vh;overflow-y:auto;"><table class="datatable"><thead><tr><th>Time</th><th>Type</th><th>Actor</th><th>Detail</th></tr></thead><tbody>'+
     list.map(function(l){
-      return '<tr><td class="mono small-muted" style="white-space:nowrap;">'+fmtShort(l.at)+'</td><td><span class="pill muted">'+l.type+'</span></td><td class="mono">'+escapeHtml(l.actor)+'</td><td>'+escapeHtml(l.text)+'</td></tr>';
+      return '<tr><td class="mono small-muted" style="white-space:nowrap;">'+fmtShort(l.at)+'</td><td><span class="pill muted">'+l.type+'</span></td><td class="mono">'+escapeHtml(l.actor)+'</td><td>'+escapeHtml(l.text)+darLinkFor(l)+'</td></tr>';
     }).join("") + '</tbody></table></div>';
 
 // shift report
@@ -2212,11 +2456,23 @@ var myCalls = STATE.calls.filter(function(c){return visibleToMe(c.post);});
       return '<div><div style="font-size:20px;font-weight:700;">'+s[1]+'</div><div class="small-muted">'+s[0]+'</div></div>';
     }).join("")+
     '</div><div style="display:flex;gap:8px;margin-top:16px;"><button class="btn sm" data-action="copyShift">Copy shift report</button><button class="btn sm" data-action="printShift">Print</button></div></div>';
+  if(uiState.openDarId){
+    var od = (STATE.dailyActivityReports||[]).find(function(d){ return d.id===uiState.openDarId; });
+    if(od && darVisible(od)) html += renderDarModal(od);
+  }
   return html;
 }
+/* Activity Log rows for a generated report get a View button that opens it. */
+function darLinkFor(l){
+  if(l.type!=="DAR") return "";
+  var m = /DAR-[A-Za-z0-9-]+/.exec(l.text||"");
+  if(!m || !(STATE.dailyActivityReports||[]).some(function(d){ return d.id===m[0] && darVisible(d); })) return "";
+  return ' <button class="btn sm" style="margin-left:6px;" data-open-dar="'+escapeHtml(m[0])+'">View report</button>';
+}
 function wireLog(){
+  wireDar();
   var csvBtn = document.querySelector('[data-action="logCsv"]');
-  if(csvBtn) csvBtn.addEventListener("click", function(){ var pickId=(document.getElementById("repCsvPick")||{}).value||""; var fromDate=(document.getElementById("repCsvFrom")||{}).value||""; var toDate=(document.getElementById("repCsvTo")||{}).value||""; downloadCsv("field_reports.csv", reportsToCsv(pickId, fromDate, toDate));
+  if(csvBtn) csvBtn.addEventListener("click", function(){
     var rows=[["Time","Type","Actor","Detail"]];
     STATE.activityLog.filter(activityVisible).forEach(function(l){ rows.push([l.at,l.type,l.actor,l.text]); });
     downloadCsv("activity_log.csv", rows);

@@ -39,12 +39,14 @@ re-publishing the entire app state on every change. */
    function truckFromRow(r){
         return {id:r.id, company:r.company||"", driver:r.driver||"", trailer:r.trailer||"", tractor:r.tractor||"",
                     post:r.post||"", purpose:r.purpose||"", dock:r.dock||"", seal:r.seal||"", bol:r.bol||"", license:r.license||"",
-                    notes:r.notes||"", timeIn:r.time_in, timeOut:r.time_out, dockArrival:r.dock_arrival, dockDeparture:r.dock_departure};
+                    notes:r.notes||"", timeIn:r.time_in, timeOut:r.time_out, dockArrival:r.dock_arrival, dockDeparture:r.dock_departure,
+                    loggedBy:r.logged_by||"", checkedOutBy:r.checked_out_by||""};
    }
    function truckToRow(t){
         return {id:t.id, company:t.company||"", driver:t.driver||"", trailer:t.trailer||"", tractor:t.tractor||"",
                     post:t.post||"", purpose:t.purpose||"", dock:t.dock||"", seal:t.seal||"", bol:t.bol||"", license:t.license||"",
-                    notes:t.notes||"", time_in:t.timeIn, time_out:t.timeOut, dock_arrival:t.dockArrival||null, dock_departure:t.dockDeparture||null};
+                    notes:t.notes||"", time_in:t.timeIn, time_out:t.timeOut, dock_arrival:t.dockArrival||null, dock_departure:t.dockDeparture||null,
+                    logged_by:t.loggedBy||"", checked_out_by:t.checkedOutBy||""};
    }
 
  function reportFromRow(r){
@@ -178,6 +180,28 @@ re-publishing the entire app state on every change. */
  function transcriptToRow(t){ return {id:t.id, at:t.at, ended_at:t.endedAt||null, channel:t.channel||"dispatch",
                                        callsign:t.callsign||"", name:t.name||"", post:t.post||"", text:t.text||""}; }
 
+ /* Unit status history (one row per status change) — the source for a Daily Activity Report's
+    on-duty time and each call's dispatched / on-scene / back-in-service times. */
+ function statusEventFromRow(r){ return {id:r.id, callsign:r.callsign, at:r.at, from:r.from_status||"", to:r.to_status||"",
+                                          callId:r.call_id||"", post:r.post||"", changedBy:r.changed_by||""}; }
+ function statusEventToRow(e){ return {id:e.id, callsign:e.callsign, at:e.at, from_status:e.from||"", to_status:e.to||"",
+                                        call_id:e.callId||"", post:e.post||"", changed_by:e.changedBy||""}; }
+ /* Daily Activity Reports — generated when a unit goes 10-42 Off Duty; `data` is the full snapshot. */
+ function darFromRow(r){ return {id:r.id, createdAt:r.created_at, callsign:r.callsign, accountCallsign:r.account_callsign||"",
+                                  name:r.name||"", postId:r.post_id||"", postName:r.post_name||"", onDutyAt:r.on_duty_at,
+                                  offDutyAt:r.off_duty_at, generatedBy:r.generated_by||"", data:r.data||{}}; }
+ function darToRow(d){ return {id:d.id, created_at:d.createdAt, callsign:d.callsign, account_callsign:d.accountCallsign||"",
+                                name:d.name||"", post_id:d.postId||"", post_name:d.postName||"", on_duty_at:d.onDutyAt||null,
+                                off_duty_at:d.offDutyAt, generated_by:d.generatedBy||"", data:d.data||{}}; }
+ /* The two Daily Activity Report tables come from supabase/migrations/20261006_daily_activity_reports.sql.
+    If that migration hasn't been run yet, load them as empty instead of failing the whole app. */
+ function optional(q, label){
+      return q.then(function(res){
+             if(res.error){ console.warn(label+" not available — run supabase/migrations/20261006_daily_activity_reports.sql", res.error); return {data:[], error:null}; }
+             return res;
+      });
+ }
+
  /* ---------- load everything into the STATE shape the UI expects ---------- */
  async function loadAllState(){
       must();
@@ -207,7 +231,10 @@ re-publishing the entire app state on every change. */
              sb.from("guard_notes").select("*").order("created_at",{ascending:false}),
              sb.from("unit_sites").select("*"),
 			sb.from("scic_entries").select("*").order("created_at",{ascending:false}),
-			sb.from("scic_search_log").select("*").order("created_at",{ascending:false}).limit(2000)
+			sb.from("scic_search_log").select("*").order("created_at",{ascending:false}).limit(2000),
+             // Last 48h of unit status changes is enough to rebuild any shift that just ended.
+             optional(sb.from("unit_status_events").select("*").gte("at", new Date(Date.now()-48*3600*1000).toISOString()).order("at",{ascending:false}).limit(10000), "unit_status_events"),
+             optional(sb.from("daily_activity_reports").select("*").order("off_duty_at",{ascending:false}).limit(1000), "daily_activity_reports")
            ]);
       results.forEach(chk);
       var users = results[0].data, units = results[1].data, posts = results[2].data, checkpoints = results[3].data,
@@ -215,7 +242,8 @@ re-publishing the entire app state on every change. */
              trucks = results[8].data, reports = results[9].data, pvs = results[10].data, police = results[11].data,
              activity = results[12].data, counters = results[13].data, scans = results[14].data, liveLocs = results[15].data,
              tours = results[16].data, tourPoints = results[17].data, tourAssignments = results[18].data, tourScans = results[19].data,
-             guardNotes = results[20].data, unitSiteRows = results[21].data, scicRows = results[22].data, scicSearchLogRows = results[23].data;
+             guardNotes = results[20].data, unitSiteRows = results[21].data, scicRows = results[22].data, scicSearchLogRows = results[23].data,
+             statusEventRows = results[24].data, darRows = results[25].data;
 
      var callsOut = calls.map(callFromRow);
       supplements.forEach(function(s){
@@ -269,6 +297,9 @@ re-publishing the entire app state on every change. */
         // alongside the read-only parking_violations/trespass-report aggregation.
         scicManual: scicRows.map(scicFromRow),
 		scicSearchLog: scicSearchLogRows.map(scicSearchLogFromRow),
+            // Daily Activity Reports (src/part3.js) — status history feeds them, the reports show in the Activity Log.
+            unitStatusEvents: statusEventRows.map(statusEventFromRow),
+            dailyActivityReports: darRows.map(darFromRow),
      };
  }
 
@@ -389,6 +420,12 @@ re-publishing the entire app state on every change. */
 		scicLog: {
 			insert: function(e){ return insertRow("scic_search_log", scicSearchLogToRow(e)); }
 		},
+      statusEvents: {
+             insert: function(e){ return insertRow("unit_status_events", statusEventToRow(e)); }
+      },
+      dailyReports: {
+             insert: function(d){ return insertRow("daily_activity_reports", darToRow(d)); }
+      },
       activity: {
              insert: function(entry){ return insertRow("activity_log", {at:entry.at, type:entry.type, actor:entry.actor, text:entry.text}); }
       },
@@ -438,7 +475,7 @@ re-publishing the entire app state on every change. */
       subscribeRealtime: function(onChange){
              if(!sb) return null;
              var tables = ["units","posts","unit_sites","calls","call_supplements","radio_transcripts","trucks","reports","parking_violations","police_on_property","guard_notes","checkpoints","activity_log","checkpoint_scans","guard_locations",
-                                 "patrol_tours","patrol_tour_points","tour_assignments","tour_point_scans","scic_entries","scic_search_log"];
+                                 "patrol_tours","patrol_tour_points","tour_assignments","tour_point_scans","scic_entries","scic_search_log","unit_status_events","daily_activity_reports"];
              var channel = sb.channel("cad-live");
              tables.forEach(function(t){
                       channel.on("postgres_changes", {event:"*", schema:"public", table:t}, function(payload){ onChange(t, payload); });
